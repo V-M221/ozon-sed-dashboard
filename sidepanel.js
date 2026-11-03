@@ -9,29 +9,16 @@ let selectedSlotIdx = null;
 let cellSeq = 0;
 let logsArray = [];
 
-// Хранилище для дедлайнов и документов в работе (ASSIGNED)
 let rawOverdueDocs = [];
 let rawDueTodayDocs = [];
 let rawAssignedDocs = [];
 let filteredOverdueDocs = [];
 let filteredDueTodayDocs = [];
+let isDeadlinesLoading = false;
 
-// Состояние выбора документов и поиска операторов для назначения в двух аккордеонах
 const ASSIGN_STATE = {
-  Overdue: {
-    selectedAlertIds: new Set(),
-    selectedOperator: null, // { id, fullName, upn }
-    searchResults: [],
-    isAssigning: false,
-    debounceTimer: null
-  },
-  DueToday: {
-    selectedAlertIds: new Set(),
-    selectedOperator: null, // { id, fullName, upn }
-    searchResults: [],
-    isAssigning: false,
-    debounceTimer: null
-  }
+  Overdue: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null },
+  DueToday: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null }
 };
 
 const OPERATOR_STATUS_MAP = {
@@ -72,7 +59,6 @@ const CHECK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><
 const COPY_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="8.5" height="8.5" rx="1.8" fill="currentColor"/><path d="M6 13.2H11.4C12.3941 13.2 13.2 12.3941 13.2 11.4V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 const CHATZONE_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2.5C4.686 2.5 2 4.79 2 7.62C2 9.15 2.785 10.525 4.03 11.46L3.45 13.65L6.03 12.48C6.655 12.65 7.315 12.74 8 12.74C11.314 12.74 14 10.45 14 7.62C14 4.79 11.314 2.5 8 2.5Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/></svg>`;
 
-// Инжектируем стили для колонки "В работе" и всплывающего тултипа при наведении
 (function injectAssignedStyles() {
   const st = document.createElement('style');
   st.textContent = `
@@ -106,7 +92,6 @@ function buildPersonActionButtonsHtml(upn) {
   const cleanUpn = String(upn).trim();
   const username = cleanUpn.split('@')[0].trim();
   if (!username) return '';
-
   const safeUpn = cleanUpn.replace(/"/g, '&quot;');
   const chatUrl = `${CHATZONE_BASE_URL}${encodeURIComponent(username)}`;
 
@@ -116,40 +101,110 @@ function buildPersonActionButtonsHtml(upn) {
   </span>`;
 }
 
-// === УПРАВЛЕНИЕ ШИРИНОЙ ПЕРВОГО СТОЛБЦА МЫШКОЙ ===
-function initFirstColWidth() {
-  const savedW = localStorage.getItem('o3_sed_first_col_w');
-  if (savedW) {
-    document.documentElement.style.setProperty('--first-col-width', `${savedW}px`);
-  }
+// === УПРАВЛЕНИЕ РАЗМЕРАМИ (ПЕРВЫЙ СТОЛБЕЦ, ВЫСОТА ТАБЛИЦЫ, ШИРИНА САЙДБАРА) ===
+function initCustomDimensions() {
+  const savedColW = localStorage.getItem('o3_sed_first_col_w');
+  if (savedColW) document.documentElement.style.setProperty('--first-col-width', `${savedColW}px`);
+
+  const savedTblH = localStorage.getItem('o3_sed_table_h');
+  if (savedTblH) document.documentElement.style.setProperty('--table-height', `${savedTblH}px`);
+
+  const savedDrwW = localStorage.getItem('o3_sed_drawer_w');
+  if (savedDrwW) document.documentElement.style.setProperty('--drawer-width', `${savedDrwW}px`);
 }
 
 document.addEventListener('mousedown', (e) => {
-  const handle = e.target.closest('.col-resizer');
-  if (!handle) return;
-  e.preventDefault();
-  e.stopPropagation();
+  const colHandle = e.target.closest('.col-resizer');
+  if (colHandle) {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = colHandle.parentElement;
+    const startX = e.clientX;
+    const startWidth = th.getBoundingClientRect().width;
+    colHandle.classList.add('resizing');
 
-  const th = handle.parentElement;
-  const startX = e.clientX;
-  const startWidth = th.getBoundingClientRect().width;
-  handle.classList.add('resizing');
-
-  function onMouseMove(ev) {
-    const newWidth = Math.max(190, Math.min(720, Math.round(startWidth + (ev.clientX - startX))));
-    document.documentElement.style.setProperty('--first-col-width', `${newWidth}px`);
-    localStorage.setItem('o3_sed_first_col_w', String(newWidth));
+    function onMoveCol(ev) {
+      const newW = Math.max(190, Math.min(720, Math.round(startWidth + (ev.clientX - startX))));
+      document.documentElement.style.setProperty('--first-col-width', `${newW}px`);
+      localStorage.setItem('o3_sed_first_col_w', String(newW));
+    }
+    function onUpCol() {
+      colHandle.classList.remove('resizing');
+      document.removeEventListener('mousemove', onMoveCol);
+      document.removeEventListener('mouseup', onUpCol);
+    }
+    document.addEventListener('mousemove', onMoveCol);
+    document.addEventListener('mouseup', onUpCol);
+    return;
   }
 
-  function onMouseUp() {
-    handle.classList.remove('resizing');
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
+  const tblHandle = e.target.closest('.table-height-resizer');
+  if (tblHandle) {
+    e.preventDefault();
+    const wrap = tblHandle.previousElementSibling;
+    if (!wrap) return;
+    const startY = e.clientY;
+    const startHeight = wrap.getBoundingClientRect().height;
+    tblHandle.classList.add('resizing');
+
+    function onMoveTbl(ev) {
+      const newH = Math.max(200, Math.min(window.innerHeight - 100, Math.round(startHeight + (ev.clientY - startY))));
+      document.documentElement.style.setProperty('--table-height', `${newH}px`);
+      localStorage.setItem('o3_sed_table_h', String(newH));
+    }
+    function onUpTbl() {
+      tblHandle.classList.remove('resizing');
+      document.removeEventListener('mousemove', onMoveTbl);
+      document.removeEventListener('mouseup', onUpTbl);
+    }
+    document.addEventListener('mousemove', onMoveTbl);
+    document.addEventListener('mouseup', onUpTbl);
+    return;
   }
 
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
+  const drwHandle = e.target.closest('#drawerResizer');
+  if (drwHandle) {
+    e.preventDefault();
+    const drawer = document.getElementById('drillDrawer');
+    const startX = e.clientX;
+    const startWidth = drawer.getBoundingClientRect().width;
+    drwHandle.classList.add('resizing');
+
+    function onMoveDrw(ev) {
+      const newW = Math.max(310, Math.min(window.innerWidth - 180, Math.round(startWidth - (ev.clientX - startX))));
+      document.documentElement.style.setProperty('--drawer-width', `${newW}px`);
+      localStorage.setItem('o3_sed_drawer_w', String(newW));
+    }
+    function onUpDrw() {
+      drwHandle.classList.remove('resizing');
+      document.removeEventListener('mousemove', onMoveDrw);
+      document.removeEventListener('mouseup', onUpDrw);
+    }
+    document.addEventListener('mousemove', onMoveDrw);
+    document.addEventListener('mouseup', onUpDrw);
+  }
 });
+
+// Синхронное разворачивание/сворачивание обоих аккордеонов дедлайнов
+function bindSyncAccordions() {
+  const accOver = document.getElementById('accOverdue');
+  const accToday = document.getElementById('accDueToday');
+  if (!accOver || !accToday) return;
+
+  let isSyncing = false;
+  accOver.addEventListener('toggle', () => {
+    if (isSyncing) return;
+    isSyncing = true;
+    accToday.open = accOver.open;
+    isSyncing = false;
+  });
+  accToday.addEventListener('toggle', () => {
+    if (isSyncing) return;
+    isSyncing = true;
+    accOver.open = accToday.open;
+    isSyncing = false;
+  });
+}
 
 document.addEventListener('click', (e) => {
   const chatLink = e.target.closest('[data-chatzone-link]');
@@ -157,7 +212,6 @@ document.addEventListener('click', (e) => {
     e.stopPropagation();
     return;
   }
-
   const copyBtn = e.target.closest('[data-copy-upn]');
   if (copyBtn) {
     e.preventDefault();
@@ -174,17 +228,14 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// === ВСПЛЫВАЮЩИЙ ТУЛТИП ПРИ НАВЕДЕНИИ НА ЯЧЕЙКУ "В РАБОТЕ (ASSIGNED)" ===
 document.addEventListener('mouseover', (e) => {
   const btn = e.target.closest('[data-assigned-tip]');
   const tt = document.getElementById('assignedFloatingTooltip');
   if (!tt) return;
-
   if (!btn) {
     tt.style.display = 'none';
     return;
   }
-
   const key = btn.getAttribute('data-assigned-tip');
   const docs = assignedTooltipStore.get(key);
   if (!docs || !docs.length) {
@@ -211,7 +262,6 @@ document.addEventListener('mouseover', (e) => {
   if (docs.length > maxShow) {
     html += `<div style="margin-top:4px; font-size:10.5px; color:var(--o3-text-sec);">...и еще ${docs.length - maxShow} док. (нажмите для полного списка)</div>`;
   }
-
   tt.innerHTML = html;
   tt.style.display = 'block';
 });
@@ -229,14 +279,11 @@ document.addEventListener('mousemove', (e) => {
   tt.style.top = `${y}px`;
 });
 
-// === ТЁМНАЯ И СВЕТЛАЯ ТЕМА ===
 function applyTheme(theme) {
   document.body.setAttribute('data-theme', theme);
   localStorage.setItem('o3_sed_theme', theme);
   const btn = document.getElementById('btnThemeToggle');
-  if (btn) {
-    btn.innerText = theme === 'dark' ? '☀️ Светлая' : '🌙 Тёмная';
-  }
+  if (btn) btn.innerText = theme === 'dark' ? '☀️ Светлая' : '🌙 Тёмная';
 }
 
 document.getElementById('btnThemeToggle').onclick = () => {
@@ -244,21 +291,12 @@ document.getElementById('btnThemeToggle').onclick = () => {
   applyTheme(cur === 'dark' ? 'light' : 'dark');
 };
 
-// === КАСТОМНЫЕ МУЛЬТИСЕЛЕКТ-ФИЛЬТРЫ ===
 const multiSelectRegistry = new Map();
 
 function initMultiSelect(containerId, labelText, placeholderText, onChange) {
   const el = document.getElementById(containerId);
   if (!el) return;
-
-  const state = {
-    containerId,
-    labelText,
-    placeholderText,
-    options: [],
-    selected: new Set(),
-    onChange
-  };
+  const state = { containerId, labelText, placeholderText, options: [], selected: new Set(), onChange };
   multiSelectRegistry.set(containerId, state);
 
   el.innerHTML = `
@@ -266,16 +304,13 @@ function initMultiSelect(containerId, labelText, placeholderText, onChange) {
     <div class="o3-field-value" style="color:var(--o3-text-sec);">${placeholderText}</div>
     <span class="o3-field-arrow">▼</span>
     <div class="o3-dropdown">
-      <div class="o3-dd-search-wrap">
-        <input type="text" class="o3-dd-search" placeholder="Поиск...">
-      </div>
+      <div class="o3-dd-search-wrap"><input type="text" class="o3-dd-search" placeholder="Поиск..."></div>
       <div class="o3-dd-list"></div>
     </div>
   `;
 
   const searchInput = el.querySelector('.o3-dd-search');
   const dropdown = el.querySelector('.o3-dropdown');
-
   renderMultiSelectOptions(state, '');
 
   el.addEventListener('click', (e) => {
@@ -297,38 +332,28 @@ function initMultiSelect(containerId, labelText, placeholderText, onChange) {
     const item = e.target.closest('.o3-dd-item');
     if (!item) return;
     const val = item.getAttribute('data-val');
-    if (val === '__CLEAR_ALL__') {
-      state.selected.clear();
-    } else {
-      if (state.selected.has(val)) state.selected.delete(val);
-      else state.selected.add(val);
-    }
+    if (val === '__CLEAR_ALL__') state.selected.clear();
+    else if (state.selected.has(val)) state.selected.delete(val);
+    else state.selected.add(val);
+
     updateMultiSelectHeader(state);
     renderMultiSelectOptions(state, searchInput ? searchInput.value : '');
     if (state.onChange) state.onChange();
   });
 
   if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      renderMultiSelectOptions(state, e.target.value);
-    });
+    searchInput.addEventListener('input', (e) => renderMultiSelectOptions(state, e.target.value));
   }
 }
 
 function setMultiSelectOptions(containerId, items, customLabels = {}) {
   const state = multiSelectRegistry.get(containerId);
   if (!state) return;
-
-  state.options = items.map(v => ({
-    value: String(v),
-    label: customLabels[v] || String(v)
-  }));
-
+  state.options = items.map(v => ({ value: String(v), label: customLabels[v] || String(v) }));
   const validValues = new Set(state.options.map(o => o.value));
   Array.from(state.selected).forEach(val => {
     if (!validValues.has(val)) state.selected.delete(val);
   });
-
   updateMultiSelectHeader(state);
   renderMultiSelectOptions(state, '');
 }
@@ -341,9 +366,7 @@ function updateMultiSelectHeader(state) {
     valEl.textContent = state.placeholderText;
     valEl.style.color = 'var(--o3-text-sec)';
   } else {
-    const labels = state.options
-      .filter(o => state.selected.has(o.value))
-      .map(o => o.label);
+    const labels = state.options.filter(o => state.selected.has(o.value)).map(o => o.label);
     valEl.textContent = labels.join(', ');
     valEl.style.color = 'var(--o3-text)';
   }
@@ -354,7 +377,6 @@ function renderMultiSelectOptions(state, searchQuery) {
   if (!el) return;
   const listEl = el.querySelector('.o3-dd-list');
   const q = (searchQuery || '').trim().toLowerCase();
-
   const filtered = state.options.filter(o => !q || o.label.toLowerCase().includes(q));
 
   let html = `<div class="o3-dd-item ${state.selected.size === 0 ? 'selected' : ''}" data-val="__CLEAR_ALL__">
@@ -369,7 +391,6 @@ function renderMultiSelectOptions(state, searchQuery) {
       <span class="o3-dd-check">${CHECK_SVG}</span>
     </div>`;
   }).join('');
-
   listEl.innerHTML = html;
 }
 
@@ -391,15 +412,12 @@ function closeAllMultiSelects() {
 }
 
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.o3-field')) {
-    closeAllMultiSelects();
-  }
+  if (!e.target.closest('.o3-field')) closeAllMultiSelects();
   if (!e.target.closest('.op-picker-wrap')) {
     document.querySelectorAll('.op-picker-dd.open').forEach(el => el.classList.remove('open'));
   }
 });
 
-// === ЛОГИРОВАНИЕ ===
 function addLog(level, message, details = null, customTime = null) {
   const timeStr = customTime || (new Date().toLocaleTimeString('ru-RU', { hour12: false }) + '.' + String(new Date().getMilliseconds()).padStart(3, '0'));
   logsArray.push({ time: timeStr, level, message, details });
@@ -407,14 +425,12 @@ function addLog(level, message, details = null, customTime = null) {
   const listEl = document.getElementById('logList');
   const countEl = document.getElementById('logCount');
   const accEl = document.getElementById('logAccordion');
-
   if (countEl) countEl.innerText = logsArray.length;
 
   if (listEl) {
     const item = document.createElement('div');
     item.className = 'log-entry';
-    const lvlClass = `log-${level}`;
-    let html = `<span class="log-time">[${timeStr}]</span><span class="${lvlClass}">${message}</span>`;
+    let html = `<span class="log-time">[${timeStr}]</span><span class="log-${level}">${message}</span>`;
     if (details) {
       const safeDetails = String(details).replace(/</g, '&lt;').replace(/>/g, '&gt;');
       html += `<div class="log-details">${safeDetails}</div>`;
@@ -423,7 +439,6 @@ function addLog(level, message, details = null, customTime = null) {
     listEl.appendChild(item);
     listEl.scrollTop = listEl.scrollHeight;
   }
-
   if (level === 'error' && accEl) {
     accEl.classList.add('has-error');
     accEl.open = true;
@@ -448,32 +463,14 @@ document.getElementById('btnCopyLogs').onclick = (e) => {
 
 const STATE = {
   executors: {
-    prefix: 'ex',
-    mode: 'executors',
-    roleTitle: 'Исполнитель',
-    dateColName: 'Дата_Закрытия',
-    docs: [],
-    fetchedAt: null,
-    collapsedGroups: new Set(),
-    expandedUsers: new Set(),
-    allUsersExpanded: false,
-    isMarksExpanded: true,
-    lastExportRows: [],
-    hasLoadedOnce: false
+    prefix: 'ex', mode: 'executors', roleTitle: 'Исполнитель', dateColName: 'Дата_Закрытия',
+    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(),
+    allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
   },
   registrars: {
-    prefix: 'rg',
-    mode: 'registrars',
-    roleTitle: 'Регистратор',
-    dateColName: 'Дата_Создания',
-    docs: [],
-    fetchedAt: null,
-    collapsedGroups: new Set(),
-    expandedUsers: new Set(),
-    allUsersExpanded: false,
-    isMarksExpanded: true,
-    lastExportRows: [],
-    hasLoadedOnce: false
+    prefix: 'rg', mode: 'registrars', roleTitle: 'Регистратор', dateColName: 'Дата_Создания',
+    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(),
+    allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
   }
 };
 
@@ -507,7 +504,6 @@ function formatStatusDuration(setAtIso, referenceIso) {
   const start = new Date(setAtIso);
   const end = referenceIso ? new Date(referenceIso) : new Date();
   if (isNaN(start.getTime()) || isNaN(end.getTime())) return '';
-
   const diffSec = Math.max(0, Math.floor((end - start) / 1000));
   if (diffSec < 60) return `${diffSec} сек`;
   const totalMins = Math.floor(diffSec / 60);
@@ -521,17 +517,12 @@ function formatStatusDuration(setAtIso, referenceIso) {
 }
 
 function getPersonStatusRender(statusInfo, fetchedAtIso, personLabel) {
-  if (!personLabel || personLabel === 'Не назначен' || personLabel === 'Не указан') {
-    return { html: '', text: '' };
-  }
+  if (!personLabel || personLabel === 'Не назначен' || personLabel === 'Не указан') return { html: '', text: '' };
   const rawSt = (statusInfo && statusInfo.status) ? statusInfo.status : 'UNKNOWN_STATUS';
   const meta = OPERATOR_STATUS_MAP[rawSt] || OPERATOR_STATUS_MAP.UNKNOWN_STATUS;
   const dur = formatStatusDuration(statusInfo && statusInfo.setAt, fetchedAtIso);
   const durPart = dur ? ` <span class="op-status-dur">· ${dur}</span>` : '';
-  const sinceTitle = (statusInfo && statusInfo.setAt)
-    ? `Установлен: ${formatDateTimeWithSecRu(statusInfo.setAt)}`
-    : 'Время установки статуса не найдено';
-
+  const sinceTitle = (statusInfo && statusInfo.setAt) ? `Установлен: ${formatDateTimeWithSecRu(statusInfo.setAt)}` : 'Время установки статуса не найдено';
   const html = `<span class="op-status-badge ${meta.cls}" title="Статус: ${meta.label} (${sinceTitle})"><span class="op-status-dot"></span>${meta.label}${durPart}</span>`;
   const text = dur ? `${meta.label} (${dur})` : meta.label;
   return { html, text };
@@ -570,10 +561,7 @@ function formatHeadingRu(h) {
 function getLegalEntity(d) {
   const name = String(d.documentName || '').trim();
   const dashIdx = name.indexOf('-');
-  if (dashIdx > 0) {
-    return name.slice(0, dashIdx).trim().toUpperCase();
-  }
-  return 'Без префикса';
+  return dashIdx > 0 ? name.slice(0, dashIdx).trim().toUpperCase() : 'Без префикса';
 }
 
 function getOperatorLabel(d) {
@@ -584,14 +572,8 @@ function getOperatorLabel(d) {
   return opInfo.fullName ? `${opInfo.fullName} (${upn})` : upn;
 }
 
-function getOperatorUpn(d) {
-  const t = d.ticket || {};
-  return (t.operator && t.operator.upn) || '';
-}
-
-function getOperatorGroup(d) {
-  return (d.operatorInfo && d.operatorInfo.groupName) || 'Без группы';
-}
+function getOperatorUpn(d) { return (d.ticket && d.ticket.operator && d.ticket.operator.upn) || ''; }
+function getOperatorGroup(d) { return (d.operatorInfo && d.operatorInfo.groupName) || 'Без группы'; }
 
 function getCreatorLabel(d) {
   const t = d.ticket || {};
@@ -601,26 +583,11 @@ function getCreatorLabel(d) {
   return crInfo.fullName ? `${crInfo.fullName} (${upn})` : upn;
 }
 
-function getCreatorUpn(d) {
-  const t = d.ticket || {};
-  return t.creator || '';
-}
-
-function getCreatorGroup(d) {
-  return (d.creatorInfo && d.creatorInfo.groupName) || 'Без группы';
-}
-
-function getPersonByMode(d, mode) {
-  return mode === 'registrars' ? getCreatorLabel(d) : getOperatorLabel(d);
-}
-
-function getPersonUpnByMode(d, mode) {
-  return mode === 'registrars' ? getCreatorUpn(d) : getOperatorUpn(d);
-}
-
-function getGroupByMode(d, mode) {
-  return mode === 'registrars' ? getCreatorGroup(d) : getOperatorGroup(d);
-}
+function getCreatorUpn(d) { return (d.ticket && d.ticket.creator) || ''; }
+function getCreatorGroup(d) { return (d.creatorInfo && d.creatorInfo.groupName) || 'Без группы'; }
+function getPersonByMode(d, mode) { return mode === 'registrars' ? getCreatorLabel(d) : getOperatorLabel(d); }
+function getPersonUpnByMode(d, mode) { return mode === 'registrars' ? getCreatorUpn(d) : getOperatorUpn(d); }
+function getGroupByMode(d, mode) { return mode === 'registrars' ? getCreatorGroup(d) : getOperatorGroup(d); }
 
 function getPersonStatusInfoByMode(d, mode) {
   const info = mode === 'registrars' ? d.creatorInfo : d.operatorInfo;
@@ -628,23 +595,35 @@ function getPersonStatusInfoByMode(d, mode) {
   return { status: info.currentStatus || 'UNKNOWN_STATUS', setAt: info.statusSetAt || null };
 }
 
-function getDocType(d) {
-  return d.documentTypeName || 'Не указан';
-}
-
-function getQueueName(d) {
-  const t = d.ticket || {};
-  return (t.queue && t.queue.name) || 'Без очереди';
-}
-
-function getMarksArray(d) {
-  const marks = Array.isArray(d.ticketMarks) ? d.ticketMarks : [];
-  return marks.map(m => m && m.name).filter(Boolean);
-}
+function getDocType(d) { return d.documentTypeName || 'Не указан'; }
+function getQueueName(d) { return (d.ticket && d.ticket.queue && d.ticket.queue.name) || 'Без очереди'; }
+function getMarksArray(d) { return (Array.isArray(d.ticketMarks) ? d.ticketMarks : []).map(m => m && m.name).filter(Boolean); }
 
 function showSkeleton(prefix, show) {
   document.getElementById(`${prefix}Skeleton`).style.display = show ? 'block' : 'none';
   document.getElementById(`${prefix}Table`).style.display = show ? 'none' : 'table';
+
+  const asOfEl = document.getElementById(`${prefix}AsOfTime`);
+  if (asOfEl && show) {
+    asOfEl.innerHTML = `<span class="sk-inline"></span>`;
+  }
+
+  if (prefix === 'ex' && show) {
+    const skCardsHtml = `<div style="padding:12px;">
+      <div class="sk-line" style="height:54px;"></div>
+      <div class="sk-line" style="height:54px;"></div>
+      <div class="sk-line" style="height:54px; margin-bottom:0;"></div>
+    </div>`;
+    const lOver = document.getElementById('listOverdue');
+    const lToday = document.getElementById('listDueToday');
+    if (lOver) lOver.innerHTML = skCardsHtml;
+    if (lToday) lToday.innerHTML = skCardsHtml;
+
+    const bOver = document.getElementById('badgeOverdueCount');
+    const bToday = document.getElementById('badgeDueTodayCount');
+    if (bOver) bOver.innerHTML = `<span class="sk-pill"></span>`;
+    if (bToday) bToday.innerHTML = `<span class="sk-pill"></span>`;
+  }
 }
 
 function setProgress(prefix, active, text = '') {
@@ -662,16 +641,8 @@ async function findSedTab() {
 
 async function ensureConnectionAndSend(tabId, messagePayload) {
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['bridge.js'],
-      world: 'ISOLATED'
-    });
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['injector.js'],
-      world: 'MAIN'
-    });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['bridge.js'], world: 'ISOLATED' });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['injector.js'], world: 'MAIN' });
     await new Promise(r => setTimeout(r, 60));
   } catch (err) {
     addLog('warn', `Предупреждение при обновлении скрипта в tabId=${tabId}: ${err.message}`);
@@ -685,6 +656,8 @@ async function fetchWidgetData(mode) {
   const dateYMD = document.getElementById(`${p}Date`).value;
   if (!dateYMD) return;
 
+  if (mode === 'executors') isDeadlinesLoading = true;
+
   document.getElementById(`${p}SysDate`).innerText = formatYMDToRu(dateYMD);
   showSkeleton(p, true);
   setProgress(p, true, `Подключение к crm.bank.ozon.ru и запрос документов за ${formatYMDToRu(dateYMD)}...`);
@@ -693,6 +666,7 @@ async function fetchWidgetData(mode) {
 
   const tab = await findSedTab();
   if (!tab) {
+    isDeadlinesLoading = false;
     showSkeleton(p, false);
     const msg = 'Не найдена открытая вкладка https://crm.bank.ozon.ru/! Откройте СЭД в браузере и нажмите «Обновить».';
     setProgress(p, true, msg);
@@ -701,19 +675,15 @@ async function fetchWidgetData(mode) {
   }
 
   try {
-    await ensureConnectionAndSend(tab.id, {
-      target: 'INJECTOR',
-      type: 'FETCH_DATE',
-      payload: { dateYMD, mode }
-    });
+    await ensureConnectionAndSend(tab.id, { target: 'INJECTOR', type: 'FETCH_DATE', payload: { dateYMD, mode } });
   } catch (e) {
+    isDeadlinesLoading = false;
     showSkeleton(p, false);
     setProgress(p, true, 'Ошибка связи со вкладкой СЭД: ' + e.message);
     addLog('error', 'Ошибка при отправке команды FETCH_DATE', e.stack || e.message);
   }
 }
 
-// === ФИЛЬТРАЦИЯ ДЛЯ АККОРДЕОНОВ И СТОЛБЦА "В РАБОТЕ (ASSIGNED)" ===
 function filterAlertDocsByExecutorsUI(docs) {
   const p = 'ex';
   const selEntities = getMultiSelectValues(`${p}WrapEntity`);
@@ -744,7 +714,6 @@ function filterAlertDocsByExecutorsUI(docs) {
   });
 }
 
-// === ЛОГИКА ВЫБОРА ДОКУМЕНТОВ И НАЗНАЧЕНИЯ ОПЕРАТОРА В АККОРДЕОНАХ ===
 function getSectionFilteredDocs(section) {
   return section === 'Overdue' ? filteredOverdueDocs : filteredDueTodayDocs;
 }
@@ -756,7 +725,6 @@ function updateAssignToolbarState(section) {
   const docs = getSectionFilteredDocs(section);
   const validAlertIds = new Set(docs.map(d => Number(d.ticket && d.ticket.id)).filter(Boolean));
 
-  // Очищаем чекбоксы документов, которые скрыты текущими фильтрами
   Array.from(st.selectedAlertIds).forEach(id => {
     if (!validAlertIds.has(id)) st.selectedAlertIds.delete(id);
   });
@@ -806,9 +774,11 @@ function renderDeadlineCardsList(docs, section) {
           ${alertId ? `<input type="checkbox" class="doc-check-input" data-doc-check="${section}" data-alert-id="${alertId}" ${isChecked ? 'checked' : ''} title="Выбрать для назначения оператора">` : ''}
           <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} ↗</a>
         </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">⚡ Назначить</button>` : ''}
-          <span class="dir-badge ${dirClass}">${formatHeadingRu(d.heading)} · ЮЛ: ${getLegalEntity(d)} · ${formatTicketStatusRu(t.status)}</span>
+        <div class="doc-badges-row">
+          ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">Назначить</button>` : ''}
+          <span class="dir-badge ${dirClass}">${formatHeadingRu(d.heading)}</span>
+          <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
+          <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
         </div>
       </div>
       <div class="doc-meta">
@@ -824,6 +794,7 @@ function renderDeadlineCardsList(docs, section) {
 }
 
 function renderDeadlineAccordions() {
+  if (isDeadlinesLoading) return;
   filteredOverdueDocs = filterAlertDocsByExecutorsUI(rawOverdueDocs);
   filteredDueTodayDocs = filterAlertDocsByExecutorsUI(rawDueTodayDocs);
 
@@ -847,19 +818,13 @@ async function requestOperatorsSearch(section, queryText) {
     ddEl.innerHTML = `<div class="op-dd-empty">Поиск операторов в СЭД...</div>`;
     ddEl.classList.add('open');
   }
-
   const tab = await findSedTab();
   if (!tab) {
     if (ddEl) ddEl.innerHTML = `<div class="op-dd-empty" style="color:var(--o3-red);">Откройте вкладку crm.bank.ozon.ru</div>`;
     return;
   }
-
   try {
-    await ensureConnectionAndSend(tab.id, {
-      target: 'INJECTOR',
-      type: 'SEARCH_OPERATORS',
-      payload: { section, query: queryText }
-    });
+    await ensureConnectionAndSend(tab.id, { target: 'INJECTOR', type: 'SEARCH_OPERATORS', payload: { section, query: queryText } });
   } catch (err) {
     if (ddEl) ddEl.innerHTML = `<div class="op-dd-empty" style="color:var(--o3-red);">Ошибка: ${err.message}</div>`;
   }
@@ -869,7 +834,6 @@ function renderOperatorDropdownItems(section, items) {
   const st = ASSIGN_STATE[section];
   if (!st) return;
   st.searchResults = items || [];
-
   const ddEl = document.getElementById(`opDd${section}`);
   if (!ddEl) return;
 
@@ -878,7 +842,6 @@ function renderOperatorDropdownItems(section, items) {
     ddEl.classList.add('open');
     return;
   }
-
   ddEl.innerHTML = items.map(op => {
     const isSel = st.selectedOperator && Number(st.selectedOperator.id) === Number(op.id);
     const safeName = String(op.fullName || '').replace(/"/g, '&quot;');
@@ -904,13 +867,8 @@ function selectAssignOperator(section, op) {
     inputEl.value = op ? `${op.fullName} (${op.upn})` : '';
     inputEl.classList.toggle('has-selected', Boolean(op));
   }
-  if (clearEl) {
-    clearEl.style.display = op ? 'block' : 'none';
-  }
-  if (ddEl) {
-    ddEl.classList.remove('open');
-  }
-
+  if (clearEl) clearEl.style.display = op ? 'block' : 'none';
+  if (ddEl) ddEl.classList.remove('open');
   updateAssignToolbarState(section);
 }
 
@@ -945,10 +903,7 @@ async function triggerAssignTickets(section, customAlertIds = null) {
   }
 
   const tab = await findSedTab();
-  if (!tab) {
-    alert('Не найдена открытая вкладка https://crm.bank.ozon.ru/!');
-    return;
-  }
+  if (!tab) return alert('Не найдена открытая вкладка https://crm.bank.ozon.ru/!');
 
   st.isAssigning = true;
   updateAssignToolbarState(section);
@@ -958,11 +913,7 @@ async function triggerAssignTickets(section, customAlertIds = null) {
     await ensureConnectionAndSend(tab.id, {
       target: 'INJECTOR',
       type: 'ASSIGN_TICKETS',
-      payload: {
-        section,
-        alertIds,
-        operator: st.selectedOperator
-      }
+      payload: { section, alertIds, operator: st.selectedOperator }
     });
   } catch (err) {
     st.isAssigning = false;
@@ -989,31 +940,20 @@ function applyLocalTicketAssignment(alertIds, operator, operatorInfo) {
     const t = d.ticket || {};
     const tid = Number(t.id);
     if (!tid || !idSet.has(tid)) return false;
-
-    t.operator = {
-      id: Number(operator.id),
-      upn: operator.upn
-    };
+    t.operator = { id: Number(operator.id), upn: operator.upn };
     t.status = 'ASSIGNED';
     d.updatedAt = nowIso;
-    d.operatorInfo = {
-      ...fallbackInfo,
-      fullName: fallbackInfo.fullName || operator.fullName || ''
-    };
+    d.operatorInfo = { ...fallbackInfo, fullName: fallbackInfo.fullName || operator.fullName || '' };
     return true;
   };
 
   const newlyAssignedDocs = [];
-
   [rawOverdueDocs, rawDueTodayDocs].forEach(arr => {
     arr.forEach(d => {
-      if (updateDoc(d)) {
-        newlyAssignedDocs.push(d);
-      }
+      if (updateDoc(d)) newlyAssignedDocs.push(d);
     });
   });
 
-  // Обновляем или добавляем назначенные документы в список rawAssignedDocs (столбец "В работе (ASSIGNED)")
   const existingAssignedMap = new Map();
   rawAssignedDocs.forEach(d => {
     if (d && d.id) existingAssignedMap.set(d.id, d);
@@ -1053,13 +993,9 @@ function bindAssignSectionEvents(section) {
 
   if (inputEl) {
     inputEl.addEventListener('focus', () => {
-      // Если оператор уже выбран, при клике открываем список или ищем по текущему запросу
       const q = st.selectedOperator ? '' : inputEl.value.trim();
-      if (st.searchResults.length > 0 && !q) {
-        ddEl.classList.add('open');
-      } else {
-        requestOperatorsSearch(section, q);
-      }
+      if (st.searchResults.length > 0 && !q) ddEl.classList.add('open');
+      else requestOperatorsSearch(section, q);
     });
 
     inputEl.addEventListener('input', (e) => {
@@ -1071,9 +1007,7 @@ function bindAssignSectionEvents(section) {
         updateAssignToolbarState(section);
       }
       if (st.debounceTimer) clearTimeout(st.debounceTimer);
-      st.debounceTimer = setTimeout(() => {
-        requestOperatorsSearch(section, val.trim());
-      }, 260);
+      st.debounceTimer = setTimeout(() => requestOperatorsSearch(section, val.trim()), 260);
     });
   }
 
@@ -1094,12 +1028,11 @@ function bindAssignSectionEvents(section) {
       e.stopPropagation();
       const opt = e.target.closest('.op-dd-option');
       if (!opt) return;
-      const op = {
+      selectAssignOperator(section, {
         id: Number(opt.getAttribute('data-op-id')),
         fullName: opt.getAttribute('data-op-name') || '',
         upn: opt.getAttribute('data-op-upn') || ''
-      };
-      selectAssignOperator(section, op);
+      });
     });
   }
 
@@ -1130,13 +1063,11 @@ function bindAssignSectionEvents(section) {
       e.preventDefault();
       e.stopPropagation();
       const alertId = Number(singleBtn.getAttribute('data-alert-id'));
-      if (!alertId) return;
-      triggerAssignTickets(section, [alertId]);
+      if (alertId) triggerAssignTickets(section, [alertId]);
     });
   }
 }
 
-// Единый слушатель сообщений от injector.js
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'LIVE_LOG' && msg.payload) {
     addLog(msg.payload.level, msg.payload.message, msg.payload.details, msg.payload.time);
@@ -1144,8 +1075,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'LIVE_PROGRESS') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
-    const p = STATE[mode].prefix;
-    setProgress(p, true, msg.payload.text);
+    setProgress(STATE[mode].prefix, true, msg.payload.text);
     return;
   }
   if (msg.type === 'LIVE_RESULT') {
@@ -1164,6 +1094,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg.type === 'DEADLINES_RESULT' && msg.payload) {
+    isDeadlinesLoading = false;
     rawOverdueDocs = msg.payload.overdueDocs || [];
     rawDueTodayDocs = msg.payload.dueTodayDocs || [];
     rawAssignedDocs = msg.payload.assignedDocs || [];
@@ -1172,15 +1103,13 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg.type === 'SEARCH_OPERATORS_RESULT' && msg.payload) {
-    const { section, items } = msg.payload;
-    renderOperatorDropdownItems(section, items);
+    renderOperatorDropdownItems(msg.payload.section, msg.payload.items);
     return;
   }
   if (msg.type === 'SEARCH_OPERATORS_ERROR' && msg.payload) {
-    const { section, message } = msg.payload;
-    const ddEl = document.getElementById(`opDd${section}`);
+    const ddEl = document.getElementById(`opDd${msg.payload.section}`);
     if (ddEl) {
-      ddEl.innerHTML = `<div class="op-dd-empty" style="color:var(--o3-red);">Ошибка: ${message}</div>`;
+      ddEl.innerHTML = `<div class="op-dd-empty" style="color:var(--o3-red);">Ошибка: ${msg.payload.message}</div>`;
       ddEl.classList.add('open');
     }
     return;
@@ -1197,7 +1126,6 @@ chrome.runtime.onMessage.addListener((msg) => {
       st.isAssigning = false;
       (succeededAlertIds || []).forEach(id => st.selectedAlertIds.delete(Number(id)));
     }
-
     if (succeededAlertIds && succeededAlertIds.length > 0) {
       applyLocalTicketAssignment(succeededAlertIds, operator, operatorInfo);
       populateDropdowns('executors');
@@ -1207,28 +1135,18 @@ chrome.runtime.onMessage.addListener((msg) => {
     }
 
     if (!failedItems || failedItems.length === 0) {
-      setAssignStatusLine(
-        section,
-        `✅ Назначено ${succeededAlertIds.length} док. на ${operator.fullName} (${operator.upn})`,
-        'var(--o3-green)'
-      );
+      setAssignStatusLine(section, `✅ Назначено ${succeededAlertIds.length} док. на ${operator.fullName} (${operator.upn})`, 'var(--o3-green)');
     } else {
-      setAssignStatusLine(
-        section,
-        `⚠️ Назначено: ${succeededAlertIds.length}, ошибок: ${failedItems.length} (см. лог внизу)`,
-        'var(--o3-amber)'
-      );
+      setAssignStatusLine(section, `⚠️ Назначено: ${succeededAlertIds.length}, ошибок: ${failedItems.length} (см. лог внизу)`, 'var(--o3-amber)');
     }
-
     setTimeout(() => {
-      if (ASSIGN_STATE[section] && !ASSIGN_STATE[section].isAssigning) {
-        setAssignStatusLine(section, '');
-      }
+      if (ASSIGN_STATE[section] && !ASSIGN_STATE[section].isAssigning) setAssignStatusLine(section, '');
     }, 5000);
     return;
   }
   if (msg.type === 'LIVE_ERROR') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
+    if (mode === 'executors') isDeadlinesLoading = false;
     const p = STATE[mode].prefix;
     showSkeleton(p, false);
     const errText = msg.payload.message || String(msg.payload);
@@ -1240,17 +1158,8 @@ chrome.runtime.onMessage.addListener((msg) => {
 function populateDropdowns(mode) {
   const st = STATE[mode];
   const p = st.prefix;
-
-  const entities = new Set();
-  const docTypes = new Set();
-  const groups = new Set();
-  const persons = new Set();
-  const queues = new Set();
-  const marks = new Set();
-
-  const sourceDocs = mode === 'executors'
-    ? [...st.docs, ...rawOverdueDocs, ...rawDueTodayDocs, ...rawAssignedDocs]
-    : st.docs;
+  const entities = new Set(), docTypes = new Set(), groups = new Set(), persons = new Set(), queues = new Set(), marks = new Set();
+  const sourceDocs = mode === 'executors' ? [...st.docs, ...rawOverdueDocs, ...rawDueTodayDocs, ...rawAssignedDocs] : st.docs;
 
   sourceDocs.forEach(d => {
     entities.add(getLegalEntity(d));
@@ -1262,18 +1171,12 @@ function populateDropdowns(mode) {
   });
 
   setMultiSelectOptions(`${p}WrapEntity`, Array.from(entities).sort());
-  setMultiSelectOptions(`${p}WrapHeading`, ['INCOMING', 'OUTGOING'], {
-    'INCOMING': 'Входящие (INCOMING)',
-    'OUTGOING': 'Исходящие (OUTGOING)'
-  });
+  setMultiSelectOptions(`${p}WrapHeading`, ['INCOMING', 'OUTGOING'], { 'INCOMING': 'Входящие (INCOMING)', 'OUTGOING': 'Исходящие (OUTGOING)' });
   setMultiSelectOptions(`${p}WrapDocType`, Array.from(docTypes).sort());
   setMultiSelectOptions(`${p}WrapGroup`, Array.from(groups).sort());
   setMultiSelectOptions(`${p}WrapPerson`, Array.from(persons).sort());
   setMultiSelectOptions(`${p}WrapQueue`, Array.from(queues).sort());
-  setMultiSelectOptions(`${p}WrapMark`, ['__ANY__', '__NONE__', ...Array.from(marks).sort()], {
-    '__ANY__': 'С метками',
-    '__NONE__': 'Без меток'
-  });
+  setMultiSelectOptions(`${p}WrapMark`, ['__ANY__', '__NONE__', ...Array.from(marks).sort()], { '__ANY__': 'С метками', '__NONE__': 'Без меток' });
 }
 
 function makeDrillCell(docsArr, title, sub, mode, extraClass = '') {
@@ -1285,7 +1188,6 @@ function makeDrillCell(docsArr, title, sub, mode, extraClass = '') {
   return `<td${clsAttr}><span class="cell-btn" title="Нажмите для просмотра графика активности и документов (${cnt} шт.)" data-drill="${key}">${cnt}</span></td>`;
 }
 
-// Специальная ячейка для столбца "В работе (ASSIGNED)" с поддержкой богатого тултипа при наведении
 function makeAssignedCell(docsArr, title, sub) {
   const cnt = docsArr ? docsArr.length : 0;
   if (cnt === 0) return `<td class="cell-zero">0</td>`;
@@ -1295,7 +1197,6 @@ function makeAssignedCell(docsArr, title, sub) {
   return `<td><span class="cell-btn assigned-btn" data-drill="${key}" data-assigned-tip="${key}">${cnt}</span></td>`;
 }
 
-// === ОТРИСОВКА ТАБЛИЦЫ ВИДЖЕТА (НА ЛИСТЕ ИСПОЛНИТЕЛЕЙ ДОБАВЛЕН СТОЛБЕЦ "В РАБОТЕ") ===
 function renderWidgetTable(mode) {
   const st = STATE[mode];
   const p = st.prefix;
@@ -1324,7 +1225,6 @@ function renderWidgetTable(mode) {
     if (selGroups.size > 0 && !selGroups.has(getGroupByMode(d, mode))) return false;
     if (selPersons.size > 0 && !selPersons.has(getPersonByMode(d, mode))) return false;
     if (selQueues.size > 0 && !selQueues.has(getQueueName(d))) return false;
-
     if (selMarks.size > 0) {
       const mks = getMarksArray(d);
       let markMatched = false;
@@ -1339,14 +1239,8 @@ function renderWidgetTable(mode) {
   const filtered = st.docs.filter(matchesActiveFilters);
   const filteredAssigned = isExec ? rawAssignedDocs.filter(matchesActiveFilters) : [];
 
-  const marksSet = new Set();
-  const groupsMap = new Map();
-  const uniqueUsers = new Set();
-
-  const grandAssigned = [];
-  const grandNoMark = [];
-  const grandWithMarks = [];
-  const grandByMark = {};
+  const marksSet = new Set(), groupsMap = new Map(), uniqueUsers = new Set();
+  const grandAssigned = [], grandNoMark = [], grandWithMarks = [], grandByMark = {};
 
   function ensureHierarchyNode(d) {
     const person = getPersonByMode(d, mode);
@@ -1354,31 +1248,18 @@ function renderWidgetTable(mode) {
     const grpName = getGroupByMode(d, mode);
     const statusInfo = getPersonStatusInfoByMode(d, mode);
     const docType = getDocType(d);
-
     uniqueUsers.add(person);
 
-    if (!groupsMap.has(grpName)) {
-      groupsMap.set(grpName, { groupName: grpName, assigned: [], all: [], noMark: [], withMarks: [], byMark: {}, users: new Map() });
-    }
+    if (!groupsMap.has(grpName)) groupsMap.set(grpName, { groupName: grpName, assigned: [], all: [], noMark: [], withMarks: [], byMark: {}, users: new Map() });
     const g = groupsMap.get(grpName);
-
-    if (!g.users.has(person)) {
-      g.users.set(person, { person, upn, statusInfo, assigned: [], all: [], noMark: [], withMarks: [], byMark: {}, docTypes: new Map() });
-    }
+    if (!g.users.has(person)) g.users.set(person, { person, upn, statusInfo, assigned: [], all: [], noMark: [], withMarks: [], byMark: {}, docTypes: new Map() });
     const u = g.users.get(person);
     if (!u.upn && upn) u.upn = upn;
-    if ((!u.statusInfo || u.statusInfo.status === 'UNKNOWN_STATUS') && statusInfo.status !== 'UNKNOWN_STATUS') {
-      u.statusInfo = statusInfo;
-    }
-
-    if (!u.docTypes.has(docType)) {
-      u.docTypes.set(docType, { docType, assigned: [], all: [], noMark: [], withMarks: [], byMark: {} });
-    }
-    const dt = u.docTypes.get(docType);
-    return { g, u, dt };
+    if ((!u.statusInfo || u.statusInfo.status === 'UNKNOWN_STATUS') && statusInfo.status !== 'UNKNOWN_STATUS') u.statusInfo = statusInfo;
+    if (!u.docTypes.has(docType)) u.docTypes.set(docType, { docType, assigned: [], all: [], noMark: [], withMarks: [], byMark: {} });
+    return { g, u, dt: u.docTypes.get(docType) };
   }
 
-  // 1. Заполняем закрытые/созданные за выбранную дату документы
   filtered.forEach(d => {
     const docMarks = getMarksArray(d);
     const hasMk = docMarks.length > 0;
@@ -1391,41 +1272,26 @@ function renderWidgetTable(mode) {
         if (!grandByMark[mName]) grandByMark[mName] = [];
         grandByMark[mName].push(d);
       });
-    } else {
-      grandNoMark.push(d);
-    }
+    } else grandNoMark.push(d);
 
-    g.all.push(d);
-    u.all.push(d);
-    dt.all.push(d);
-
+    g.all.push(d); u.all.push(d); dt.all.push(d);
     if (hasMk) {
-      g.withMarks.push(d);
-      u.withMarks.push(d);
-      dt.withMarks.push(d);
+      g.withMarks.push(d); u.withMarks.push(d); dt.withMarks.push(d);
       docMarks.forEach(mName => {
         if (!g.byMark[mName]) g.byMark[mName] = [];
         if (!u.byMark[mName]) u.byMark[mName] = [];
         if (!dt.byMark[mName]) dt.byMark[mName] = [];
-        g.byMark[mName].push(d);
-        u.byMark[mName].push(d);
-        dt.byMark[mName].push(d);
+        g.byMark[mName].push(d); u.byMark[mName].push(d); dt.byMark[mName].push(d);
       });
     } else {
-      g.noMark.push(d);
-      u.noMark.push(d);
-      dt.noMark.push(d);
+      g.noMark.push(d); u.noMark.push(d); dt.noMark.push(d);
     }
   });
 
-  // 2. На листе Исполнителей добавляем документы, которые сейчас находятся В РАБОТЕ (ASSIGNED) у человека
   if (isExec) {
     filteredAssigned.forEach(d => {
       const { g, u, dt } = ensureHierarchyNode(d);
-      grandAssigned.push(d);
-      g.assigned.push(d);
-      u.assigned.push(d);
-      dt.assigned.push(d);
+      grandAssigned.push(d); g.assigned.push(d); u.assigned.push(d); dt.assigned.push(d);
     });
   }
 
@@ -1439,7 +1305,6 @@ function renderWidgetTable(mode) {
 
   const thead = document.querySelector(`#${p}Table thead`);
   const tbody = document.querySelector(`#${p}Table tbody`);
-
   const markToggleIcon = st.isMarksExpanded ? '◀ Свернуть' : `▶ Развернуть (${sortedMarks.length})`;
 
   thead.innerHTML = `<tr>
@@ -1447,7 +1312,7 @@ function renderWidgetTable(mode) {
       Группа / ${st.roleTitle} / Тип док. (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
-    ${isExec ? `<th class="assigned-col" title="Сколько сейчас документов в статусе Назначен (ASSIGNED). Наведите курсор на ячейку для деталей!">В работе (ASSIGNED)</th>` : ''}
+    ${isExec ? `<th class="assigned-col" title="Сколько сейчас документов в статусе В работе (ASSIGNED). Наведите курсор на ячейку для деталей!">В работе (ASSIGNED)</th>` : ''}
     <th>Всего</th>
     <th>Без метки</th>
     <th class="marks-parent-col" data-toggle-marks="${mode}" title="Нажмите, чтобы свернуть или развернуть детализацию по каждой метке">
@@ -1464,17 +1329,10 @@ function renderWidgetTable(mode) {
     const sortedUsers = Array.from(g.users.values()).sort((a, b) => (b.all.length || b.assigned.length) - (a.all.length || a.assigned.length));
 
     const gExp = {
-      'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt),
-      [st.dateColName]: dateRu,
-      'Группа': g.groupName,
-      [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]',
-      'Логин_UPN': '',
-      'Текущий_Статус': '',
-      'Тип_Документа': 'ВСЕ ТИПЫ',
+      'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+      [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
       ...(isExec ? { 'В_Работе_ASSIGNED': g.assigned.length } : {}),
-      'Всего': g.all.length,
-      'Без_Метки': g.noMark.length,
-      'С_Меткой_Всего': g.withMarks.length
+      'Всего': g.all.length, 'Без_Метки': g.noMark.length, 'С_Меткой_Всего': g.withMarks.length
     };
     sortedMarks.forEach(m => { gExp[`Метка: ${m}`] = (g.byMark[m] || []).length; });
     expRows.push(gExp);
@@ -1484,9 +1342,7 @@ function renderWidgetTable(mode) {
       : '';
 
     html += `<tr class="group-row">
-      <td class="sticky-col" data-grp="${g.groupName}">
-        ${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span>
-      </td>
+      <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span></td>
       ${isExec ? makeAssignedCell(g.assigned, `Группа: ${g.groupName}`, 'Сейчас в работе (ASSIGNED)') : ''}
       ${makeDrillCell(g.all, `Группа: ${g.groupName}`, `Все документы подразделения за ${dateRu}`, mode)}
       ${makeDrillCell(g.noMark, `Группа: ${g.groupName}`, `Без метки за ${dateRu}`, mode)}
@@ -1501,23 +1357,13 @@ function renderWidgetTable(mode) {
         const sortedDocTypes = Array.from(u.docTypes.values()).sort((a, b) => (b.all.length + b.assigned.length) - (a.all.length + a.assigned.length));
         const statusRender = getPersonStatusRender(u.statusInfo, st.fetchedAt, u.person);
         const actionsHtml = buildPersonActionButtonsHtml(u.upn);
-
-        const assignedDetailsStr = isExec
-          ? u.assigned.map(ad => `${getDocType(ad)} (${formatStatusDuration(ad.updatedAt || ad.createdAt, st.fetchedAt)})`).join(', ')
-          : '';
+        const assignedDetailsStr = isExec ? u.assigned.map(ad => `${getDocType(ad)} (${formatStatusDuration(ad.updatedAt || ad.createdAt, st.fetchedAt)})`).join(', ') : '';
 
         const uExp = {
-          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt),
-          [st.dateColName]: dateRu,
-          'Группа': g.groupName,
-          [st.roleTitle]: u.person,
-          'Логин_UPN': u.upn || '',
-          'Текущий_Статус': statusRender.text,
-          'Тип_Документа': '[ВСЕ ТИПЫ СОТРУДНИКА]',
+          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+          [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': '[ВСЕ ТИПЫ СОТРУДНИКА]',
           ...(isExec ? { 'В_Работе_ASSIGNED': u.assigned.length, 'Детали_В_Работе': assignedDetailsStr } : {}),
-          'Всего': u.all.length,
-          'Без_Метки': u.noMark.length,
-          'С_Меткой_Всего': u.withMarks.length
+          'Всего': u.all.length, 'Без_Метки': u.noMark.length, 'С_Меткой_Всего': u.withMarks.length
         };
         sortedMarks.forEach(m => { uExp[`Метка: ${m}`] = (u.byMark[m] || []).length; });
         expRows.push(uExp);
@@ -1544,17 +1390,10 @@ function renderWidgetTable(mode) {
         if (isUserExp) {
           sortedDocTypes.forEach(dt => {
             const dtExp = {
-              'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt),
-              [st.dateColName]: dateRu,
-              'Группа': g.groupName,
-              [st.roleTitle]: u.person,
-              'Логин_UPN': u.upn || '',
-              'Текущий_Статус': statusRender.text,
-              'Тип_Документа': dt.docType,
+              'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+              [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': dt.docType,
               ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'Детали_В_Работе': '' } : {}),
-              'Всего': dt.all.length,
-              'Без_Метки': dt.noMark.length,
-              'С_Меткой_Всего': dt.withMarks.length
+              'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
             };
             sortedMarks.forEach(m => { dtExp[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
             expRows.push(dtExp);
@@ -1579,17 +1418,10 @@ function renderWidgetTable(mode) {
 
   if (sortedGroups.length > 0) {
     const totExp = {
-      'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt),
-      [st.dateColName]: dateRu,
-      'Группа': 'ВСЕ ГРУППЫ',
-      [st.roleTitle]: 'ОБЩИЙ ИТОГ',
-      'Логин_UPN': '',
-      'Текущий_Статус': '',
-      'Тип_Документа': 'ВСЕ ТИПЫ',
+      'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
+      [st.roleTitle]: 'ОБЩИЙ ИТОГ', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
       ...(isExec ? { 'В_Работе_ASSIGNED': grandAssigned.length, 'Детали_В_Работе': '' } : {}),
-      'Всего': filtered.length,
-      'Без_Метки': grandNoMark.length,
-      'С_Меткой_Всего': grandWithMarks.length
+      'Всего': filtered.length, 'Без_Метки': grandNoMark.length, 'С_Меткой_Всего': grandWithMarks.length
     };
     sortedMarks.forEach(m => { totExp[`Метка: ${m}`] = (grandByMark[m] || []).length; });
     expRows.push(totExp);
@@ -1616,7 +1448,6 @@ function renderWidgetTable(mode) {
   showSkeleton(p, false);
 }
 
-// === ДИАГРАММА АКТИВНОСТИ В ОКНЕ ДЕТАЛИЗАЦИИ ===
 function renderActivityAnalytics(docs, mode) {
   const isReg = (mode === 'registrars');
   document.getElementById('actFirstLbl').innerText = isReg ? 'Первый созданный' : 'Первый документ';
@@ -1626,48 +1457,34 @@ function renderActivityAnalytics(docs, mode) {
     : 'График активности по 15-минутным интервалам (клик по столбику фильтрует список)';
 
   const slots = new Array(96).fill(0);
-  let minDate = null;
-  let maxDate = null;
+  let minDate = null, maxDate = null;
 
   docs.forEach(d => {
     const dt = getDocActivityDate(d, mode);
     if (!dt) return;
     if (!minDate || dt < minDate) minDate = dt;
     if (!maxDate || dt > maxDate) maxDate = dt;
-
     const slotIdx = dt.getHours() * 4 + Math.floor(dt.getMinutes() / 15);
-    if (slotIdx >= 0 && slotIdx < 96) {
-      slots[slotIdx]++;
-    }
+    if (slotIdx >= 0 && slotIdx < 96) slots[slotIdx]++;
   });
 
   document.getElementById('actFirstVal').innerText = minDate ? formatTimeHMS(minDate) : '—';
   document.getElementById('actLastVal').innerText = maxDate ? formatTimeHMS(maxDate) : '—';
 
   if (minDate && maxDate) {
-    const diffMs = maxDate - minDate;
-    const totalMins = Math.floor(diffMs / 60000);
-    const hrs = Math.floor(totalMins / 60);
-    const mins = totalMins % 60;
+    const totalMins = Math.floor((maxDate - minDate) / 60000);
+    const hrs = Math.floor(totalMins / 60), mins = totalMins % 60;
     document.getElementById('actSpanVal').innerText = hrs > 0 ? `${hrs} ч ${mins} мин` : `${mins} мин`;
-  } else {
-    document.getElementById('actSpanVal').innerText = '—';
-  }
+  } else document.getElementById('actSpanVal').innerText = '—';
 
-  let maxSlotCount = 0;
-  let peakSlotIdx = -1;
+  let maxSlotCount = 0, peakSlotIdx = -1;
   slots.forEach((cnt, idx) => {
-    if (cnt > maxSlotCount) {
-      maxSlotCount = cnt;
-      peakSlotIdx = idx;
-    }
+    if (cnt > maxSlotCount) { maxSlotCount = cnt; peakSlotIdx = idx; }
   });
 
-  if (maxSlotCount > 0 && peakSlotIdx >= 0) {
-    document.getElementById('actPeakVal').innerText = `${formatSlotRange(peakSlotIdx)} (${maxSlotCount} шт.)`;
-  } else {
-    document.getElementById('actPeakVal').innerText = '—';
-  }
+  document.getElementById('actPeakVal').innerText = (maxSlotCount > 0 && peakSlotIdx >= 0)
+    ? `${formatSlotRange(peakSlotIdx)} (${maxSlotCount} шт.)`
+    : '—';
 
   const barsContainer = document.getElementById('actChartBars');
   barsContainer.innerHTML = slots.map((cnt, idx) => {
@@ -1700,6 +1517,7 @@ function openDrawer(key) {
   renderActivityAnalytics(activeDrawerDocs, activeDrawerMode);
   renderDrawerList('');
   document.getElementById('drillDrawer').classList.add('open');
+  document.body.classList.add('drawer-open');
 }
 
 function renderDrawerList(q) {
@@ -1707,16 +1525,13 @@ function renderDrawerList(q) {
   const listEl = document.getElementById('drList');
 
   const matched = activeDrawerDocs.filter(d => {
-    if (selectedSlotIdx !== null) {
-      if (getDocSlotIndex(d, activeDrawerMode) !== selectedSlotIdx) return false;
-    }
+    if (selectedSlotIdx !== null && getDocSlotIndex(d, activeDrawerMode) !== selectedSlotIdx) return false;
     if (!query) return true;
     const t = d.ticket || {};
     const corr = d.correspondent || {};
     const hay = [
       d.documentName, d.id, d.documentTypeName, t.id, t.status, formatTicketStatusRu(t.status),
-      getOperatorLabel(d), getCreatorLabel(d), corr.fullName,
-      ...getMarksArray(d)
+      getOperatorLabel(d), getCreatorLabel(d), corr.fullName, ...getMarksArray(d)
     ].join(' ').toLowerCase();
     return hay.includes(query);
   });
@@ -1733,7 +1548,6 @@ function renderDrawerList(q) {
     const t = d.ticket || {};
     const corr = d.correspondent || {};
     const docTitle = d.documentName || d.id;
-
     const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
     const marksHtml = getMarksArray(d).map(m => `<span class="mark-pill">${m}</span>`).join('');
     const dirClass = d.heading === 'INCOMING' ? 'dir-INCOMING' : 'dir-OUTGOING';
@@ -1744,8 +1558,12 @@ function renderDrawerList(q) {
 
     return `<div class="doc-card">
       <div class="doc-top">
-        <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} (Открыть документ ↗)</a>
-        <span class="dir-badge ${dirClass}">${formatHeadingRu(d.heading)} · ЮЛ: ${getLegalEntity(d)} · ${formatTicketStatusRu(t.status)}</span>
+        <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} (Открыть ↗)</a>
+        <div class="doc-badges-row">
+          <span class="dir-badge ${dirClass}">${formatHeadingRu(d.heading)}</span>
+          <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
+          <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
+        </div>
       </div>
       <div class="doc-meta">
         <div><strong>Тип документа:</strong> ${getDocType(d)} · <strong>Очередь:</strong> ${getQueueName(d)} · <strong>Ticket ID:</strong> ${t.id || '—'}</div>
@@ -1788,16 +1606,12 @@ function bindWidgetEvents(mode) {
   initMultiSelect(`${p}WrapMark`, 'Метка тикета (Marks)', 'Все метки', rerender);
 
   document.getElementById(`${p}Table`).addEventListener('click', (e) => {
-    if (e.target.closest('.col-resizer') || e.target.closest('[data-copy-upn]') || e.target.closest('[data-chatzone-link]')) {
-      return;
-    }
-
+    if (e.target.closest('.col-resizer') || e.target.closest('[data-copy-upn]') || e.target.closest('[data-chatzone-link]')) return;
     if (e.target.closest(`[data-toggle-marks="${mode}"]`)) {
       st.isMarksExpanded = !st.isMarksExpanded;
       renderWidgetTable(mode);
       return;
     }
-
     const grp = e.target.closest('[data-grp]');
     if (grp) {
       const gName = grp.getAttribute('data-grp');
@@ -1806,7 +1620,6 @@ function bindWidgetEvents(mode) {
       renderWidgetTable(mode);
       return;
     }
-
     const usr = e.target.closest('[data-usr]');
     if (usr) {
       const uKey = usr.getAttribute('data-usr');
@@ -1815,11 +1628,8 @@ function bindWidgetEvents(mode) {
       renderWidgetTable(mode);
       return;
     }
-
     const cell = e.target.closest('[data-drill]');
-    if (cell) {
-      openDrawer(cell.getAttribute('data-drill'));
-    }
+    if (cell) openDrawer(cell.getAttribute('data-drill'));
   });
 
   document.getElementById(`${p}BtnToggleMarksCols`).onclick = () => {
@@ -1831,12 +1641,8 @@ function bindWidgetEvents(mode) {
     st.allUsersExpanded = !st.allUsersExpanded;
     if (st.allUsersExpanded) {
       const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs] : st.docs;
-      allSource.forEach(d => {
-        st.expandedUsers.add(`${getGroupByMode(d, mode)}__${getPersonByMode(d, mode)}`);
-      });
-    } else {
-      st.expandedUsers.clear();
-    }
+      allSource.forEach(d => st.expandedUsers.add(`${getGroupByMode(d, mode)}__${getPersonByMode(d, mode)}`));
+    } else st.expandedUsers.clear();
     renderWidgetTable(mode);
   };
 
@@ -1851,9 +1657,7 @@ function bindWidgetEvents(mode) {
   };
 
   document.getElementById(`${p}BtnReset`).onclick = () => {
-    ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Mark'].forEach(field => {
-      resetMultiSelect(`${p}Wrap${field}`);
-    });
+    ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Mark'].forEach(field => resetMultiSelect(`${p}Wrap${field}`));
     renderWidgetTable(mode);
   };
 
@@ -1883,17 +1687,16 @@ function activateWidgetTab(mode) {
   document.getElementById('tabRegistrars').classList.toggle('active', isReg);
   document.getElementById('widgetExecutors').style.display = isReg ? 'none' : 'block';
   document.getElementById('widgetRegistrars').style.display = isReg ? 'block' : 'none';
-
-  const st = STATE[mode];
-  if (!st.hasLoadedOnce) {
-    fetchWidgetData(mode);
-  }
+  if (!STATE[mode].hasLoadedOnce) fetchWidgetData(mode);
 }
 
 document.getElementById('tabExecutors').onclick = () => activateWidgetTab('executors');
 document.getElementById('tabRegistrars').onclick = () => activateWidgetTab('registrars');
 
-document.getElementById('btnDrClose').onclick = () => document.getElementById('drillDrawer').classList.remove('open');
+document.getElementById('btnDrClose').onclick = () => {
+  document.getElementById('drillDrawer').classList.remove('open');
+  document.body.classList.remove('drawer-open');
+};
 document.getElementById('drSearch').addEventListener('input', (e) => renderDrawerList(e.target.value));
 
 function downloadCsv(filename, rows) {
@@ -1988,29 +1791,7 @@ document.getElementById('btnDrCsv').onclick = () => {
   downloadCsv(`sed_online_docs_list.csv`, rows);
 };
 
-// Инициализация при запуске
-(function init() {
-  initFirstColWidth();
-  const savedTheme = localStorage.getItem('o3_sed_theme') || 'light';
-  applyTheme(savedTheme);
-
-  const now = new Date();
-  const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  document.getElementById('exDate').value = ymd;
-  document.getElementById('rgDate').value = ymd;
-
-  bindWidgetEvents('executors');
-  bindWidgetEvents('registrars');
-  bindAssignSectionEvents('Overdue');
-  bindAssignSectionEvents('DueToday');
-
-  const params = new URLSearchParams(window.location.search);
-  const startWidget = params.get('widget') === 'registrars' ? 'registrars' : 'executors';
-  activateWidgetTab(startWidget);
-})();
-
-// === АВТОПРОВЕРКА ОБНОВЛЕНИЙ С GITHUB ===
-// Укажите здесь ссылку на raw manifest.json вашего репозитория:
+// === АВТОПРОВЕРКА ОБНОВЛЕНИЙ С GITHUB (логин V-M221) ===
 const GITHUB_MANIFEST_URL = "https://raw.githubusercontent.com/V-M221/ozon-sed-dashboard/main/manifest.json";
 
 async function checkForGithubUpdates() {
@@ -2020,13 +1801,10 @@ async function checkForGithubUpdates() {
     btnReload.innerText = `⚡ v${localVersion}`;
     btnReload.onclick = () => chrome.runtime.reload();
   }
-
   const btnApply = document.getElementById('btnApplyUpdate');
   if (btnApply) {
     btnApply.onclick = () => chrome.runtime.reload();
   }
-
-  if (!GITHUB_MANIFEST_URL || GITHUB_MANIFEST_URL.includes('V-M221')) return;
 
   try {
     const res = await fetch(`${GITHUB_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
@@ -2042,9 +1820,29 @@ async function checkForGithubUpdates() {
         banner.style.display = 'flex';
       }
     }
-  } catch (e) {
-    // Тихо игнорируем, если нет доступа к интернету
-  }
+  } catch (e) {}
 }
 
-checkForGithubUpdates();
+(function init() {
+  initCustomDimensions();
+  bindSyncAccordions();
+
+  const savedTheme = localStorage.getItem('o3_sed_theme') || 'light';
+  applyTheme(savedTheme);
+
+  const now = new Date();
+  const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  document.getElementById('exDate').value = ymd;
+  document.getElementById('rgDate').value = ymd;
+
+  bindWidgetEvents('executors');
+  bindWidgetEvents('registrars');
+  bindAssignSectionEvents('Overdue');
+  bindAssignSectionEvents('DueToday');
+
+  checkForGithubUpdates();
+
+  const params = new URLSearchParams(window.location.search);
+  const startWidget = params.get('widget') === 'registrars' ? 'registrars' : 'executors';
+  activateWidgetTab(startWidget);
+})();

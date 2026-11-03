@@ -6,6 +6,8 @@
   <style>
     :root {
       --first-col-width: 310px;
+      --table-height: 480px;
+      --drawer-width: 460px;
       --o3-blue: #005BFF;
       --o3-blue-hover: #004ECC;
       --o3-blue-light: #EBF2FF;
@@ -53,7 +55,10 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       margin: 0; padding: 14px; font-size: 12.5px; color: var(--o3-text); background: var(--o3-bg);
-      font-variant-numeric: tabular-nums; transition: background 0.15s, color 0.15s;
+      font-variant-numeric: tabular-nums; transition: background 0.15s, color 0.15s, padding-right 0.15s;
+    }
+    body.drawer-open {
+      padding-right: calc(var(--drawer-width) + 14px);
     }
 
     .header-row {
@@ -93,7 +98,7 @@
     .top-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .as-of-badge {
       background: var(--o3-surface); border: 1px solid var(--o3-border); border-radius: 8px;
-      padding: 5px 10px; font-size: 11px; color: var(--o3-text-sec);
+      padding: 5px 10px; font-size: 11px; color: var(--o3-text-sec); display: inline-flex; align-items: center; gap: 5px;
     }
     .as-of-badge strong { color: var(--o3-text); font-weight: 700; }
 
@@ -260,14 +265,27 @@
     .doc-card.selected-doc {
       background: var(--o3-blue-light);
     }
+
+    /* Раздельные бейджи Направление / ЮЛ / Статус одинакового размера с кнопкой Назначить */
+    .doc-badges-row {
+      display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    }
+    .btn-single-assign, .dir-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 22px; padding: 0 8px; border-radius: 6px;
+      font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap;
+    }
     .btn-single-assign {
-      padding: 2px 7px; font-size: 10.5px; font-weight: 700; border-radius: 6px;
       border: 1px solid var(--o3-blue); background: var(--o3-blue-light);
-      color: var(--o3-blue); cursor: pointer; transition: 0.12s;
+      color: var(--o3-blue); cursor: pointer; transition: 0.12s; font-weight: 700;
     }
     .btn-single-assign:hover {
       background: var(--o3-blue); color: #fff;
     }
+    .dir-INCOMING { background: rgba(16, 185, 129, 0.14); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.25); }
+    .dir-OUTGOING { background: var(--o3-blue-light); color: var(--o3-blue); border: 1px solid rgba(0, 91, 255, 0.2); }
+    .badge-entity { background: var(--o3-bg); color: var(--o3-text); border: 1px solid var(--o3-border); }
+    .badge-status { background: rgba(217, 119, 6, 0.12); color: var(--o3-amber); border: 1px solid rgba(217, 119, 6, 0.25); }
 
     .btn {
       padding: 8px 12px; border: none; border-radius: 10px; cursor: pointer;
@@ -300,10 +318,26 @@
     }
     .link-mini:hover { text-decoration: underline; }
 
+    /* Таблица с регулируемой высотой */
     .table-wrap {
-      background: var(--o3-surface); border-radius: 12px; border: 1px solid var(--o3-border-light);
-      box-shadow: var(--o3-shadow); overflow: auto; max-height: calc(100vh - 340px);
+      background: var(--o3-surface); border-radius: 12px 12px 0 0; border: 1px solid var(--o3-border-light);
+      box-shadow: var(--o3-shadow); overflow: auto; height: var(--table-height); min-height: 200px; max-height: 88vh;
     }
+    .table-height-resizer {
+      height: 10px; background: var(--o3-bg); border: 1px solid var(--o3-border-light); border-top: none;
+      border-radius: 0 0 12px 12px; cursor: row-resize; display: flex; align-items: center; justify-content: center;
+      user-select: none; margin-bottom: 8px; transition: background 0.15s;
+    }
+    .table-height-resizer::after {
+      content: ""; width: 38px; height: 3px; border-radius: 2px; background: var(--o3-text-muted); opacity: 0.55;
+    }
+    .table-height-resizer:hover, .table-height-resizer.resizing {
+      background: var(--o3-blue-light);
+    }
+    .table-height-resizer:hover::after, .table-height-resizer.resizing::after {
+      background: var(--o3-blue); opacity: 1;
+    }
+
     table { border-collapse: collapse; width: 100%; font-size: 12px; }
     th, td {
       border-bottom: 1px solid var(--o3-border-light); border-right: 1px solid var(--o3-border-light);
@@ -419,9 +453,20 @@
     }
     .cell-zero { color: var(--o3-text-muted); opacity: 0.45; user-select: none; }
 
+    /* Скелетоны загрузки */
     .sk-wrap { padding: 14px; display: none; }
     .sk-line {
       height: 26px; border-radius: 7px; margin-bottom: 10px;
+      background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite linear;
+    }
+    .sk-inline {
+      display: inline-block; width: 105px; height: 13px; vertical-align: middle; border-radius: 4px;
+      background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite linear;
+    }
+    .sk-pill {
+      display: inline-block; width: 26px; height: 15px; vertical-align: middle; border-radius: 8px;
       background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
       background-size: 200% 100%; animation: shimmer 1.2s infinite linear;
     }
@@ -450,11 +495,22 @@
     .log-error { color: #FB7185; font-weight: 700; }
     .log-details { color: #94A3B8; font-size: 10.5px; margin-top: 2px; padding-left: 12px; }
 
+    /* Боковой сайдбар детализации с регулируемой шириной */
     .drawer {
-      position: fixed; inset: 0; background: var(--o3-surface); z-index: 100;
-      display: none; flex-direction: column; padding: 14px;
+      position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer-width);
+      min-width: 310px; max-width: 85vw; background: var(--o3-surface); z-index: 100;
+      display: none; flex-direction: column; padding: 14px 14px 14px 18px;
+      border-left: 1px solid var(--o3-border); box-shadow: -6px 0 28px rgba(0, 26, 52, 0.12);
     }
     .drawer.open { display: flex; }
+    .drawer-resizer {
+      position: absolute; top: 0; left: 0; bottom: 0; width: 7px;
+      cursor: ew-resize; user-select: none; z-index: 105;
+      background: transparent; transition: background 0.15s;
+    }
+    .drawer-resizer:hover, .drawer-resizer.resizing {
+      background: var(--o3-blue);
+    }
     .drawer-head {
       display: flex; justify-content: space-between; align-items: center;
       padding-bottom: 10px; border-bottom: 1px solid var(--o3-border); margin-bottom: 10px; gap: 8px;
@@ -519,29 +575,26 @@
       display: inline-block; background: var(--o3-blue-light); color: var(--o3-blue);
       padding: 2px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 600; margin: 3px 4px 0 0;
     }
-    .dir-badge {
-      display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 600;
-    }
-    .dir-INCOMING { background: rgba(16, 185, 129, 0.14); color: #10B981; }
-    .dir-OUTGOING { background: var(--o3-blue-light); color: var(--o3-blue); }
   </style>
 </head>
 <body>
-<!-- Баннер автопроверки обновлений с GitHub -->
+
+  <!-- Баннер автопроверки обновлений с GitHub -->
   <div id="updateBanner" style="display:none; background:var(--o3-blue); color:#fff; padding:9px 12px; border-radius:10px; margin-bottom:10px; font-size:12px; font-weight:600; justify-content:space-between; align-items:center; gap:8px; box-shadow:var(--o3-shadow);">
     <span id="updateBannerText">🚀 Доступна новая версия!</span>
     <div style="display:flex; gap:6px;">
       <button id="btnApplyUpdate" class="btn" style="background:#fff; color:var(--o3-blue); padding:5px 10px; font-size:11.5px; font-weight:700;">⚡ Перезагрузить расширение</button>
     </div>
   </div>
-  <!-- Верхняя панель: переключатель виджетов + переключатель Тёмной/Светлой темы -->
+
+  <!-- Верхняя панель: переключатель виджетов + кнопка версии + переключатель Тёмной/Светлой темы -->
   <div class="header-row">
     <div class="widget-switcher" style="margin-bottom:0;">
       <button id="tabExecutors" class="w-tab active">🛠 Виджет Исполнителей (По закрытию)</button>
       <button id="tabRegistrars" class="w-tab">📝 Виджет Регистраторов (По созданию)</button>
     </div>
+    <button id="btnReloadExt" class="theme-btn" title="Нажмите, чтобы перезагрузить расширение после запуска update.bat">⚡ v—</button>
     <button id="btnThemeToggle" class="theme-btn" title="Переключить Светлую / Тёмную тему">🌙 Тёмная</button>
-	<button id="btnReloadExt" class="theme-btn" title="Нажмите, чтобы перезагрузить расширение после запуска update.bat">⚡ v—</button>
   </div>
 
   <!-- ======================================================================= -->
@@ -553,7 +606,7 @@
         <div class="brand-logo">O3</div>
         <div>
           <div class="brand-title">СЭД · Дашборд Исполнителей</div>
-          <div class="brand-sub">crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Закрыт</div>
+          <div class="brand-sub">crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Завершен</div>
         </div>
       </div>
       <div class="top-actions">
@@ -678,6 +731,7 @@
         </tbody>
       </table>
     </div>
+    <div class="table-height-resizer" title="Потяните вверх/вниз для изменения высоты таблицы"></div>
   </div>
 
   <!-- ======================================================================= -->
@@ -759,6 +813,7 @@
         </tbody>
       </table>
     </div>
+    <div class="table-height-resizer" title="Потяните вверх/вниз для изменения высоты таблицы"></div>
   </div>
 
   <!-- Аккордеон с детальными логами работы и ошибок -->
@@ -773,8 +828,9 @@
     <div id="logList" class="log-list"></div>
   </details>
 
-  <!-- Модальная панель детализации + График активности с 15-минутным шагом -->
+  <!-- Правый сайдбар детализации + График активности с 15-минутным шагом -->
   <div id="drillDrawer" class="drawer">
+    <div id="drawerResizer" class="drawer-resizer" title="Потяните влево/вправо для изменения ширины сайдбара"></div>
     <div class="drawer-head">
       <div>
         <div class="drawer-title" id="drTitle">Детализация документов</div>

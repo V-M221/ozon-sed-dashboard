@@ -453,13 +453,55 @@
     }, '*');
   }
 
+  // === ОТДЕЛЬНЫЙ ПЕРЕЗАПРОС ДОКУМЕНТОВ ПО ВЫБРАННОЙ ДАТЕ ИСТЕЧЕНИЯ СРОКА ===
+  async function fetchSingleDueDateDocs(dueDateYMD) {
+    try {
+      const targetDueYMD = dueDateYMD || (() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      })();
+
+      const dueDateFilter = {
+        statusIn: OPEN_SED_STATUSES,
+        documentCreatedFrom: "2026-01-01T00:00:00+03:00",
+        documentCreatedTo: "2027-12-31T23:59:59+03:00",
+        deadlineFrom: `${targetDueYMD}T00:00:00+03:00`,
+        deadlineTo: `${targetDueYMD}T23:59:59+03:00`
+      };
+
+      sendLog('info', `Запрос документов со сроком истечения ${targetDueYMD}...`);
+      const dueTodayDocs = await fetchAllByFilter(dueDateFilter);
+      sendLog('success', `Загружены документы со сроком ${targetDueYMD}: ${dueTodayDocs.length} шт.`);
+
+      window.postMessage({
+        source: 'CRM_INJECTOR',
+        type: 'DUE_DATE_RESULT',
+        payload: {
+          dueDateYMD: targetDueYMD,
+          dueTodayDocs
+        }
+      }, '*');
+    } catch (e) {
+      sendLog('error', `Ошибка при загрузке документов по дате истечения: ${e.message}`);
+      window.postMessage({
+        source: 'CRM_INJECTOR',
+        type: 'DUE_DATE_RESULT',
+        payload: {
+          dueDateYMD,
+          dueTodayDocs: []
+        }
+      }, '*');
+    }
+  }
+
   // === СБОР ДЕДЛАЙНОВ + ВСЕХ ДОКУМЕНТОВ В РАБОТЕ (ASSIGNED) ===
-  async function fetchDeadlinesAndAssignedAlerts() {
+  async function fetchDeadlinesAndAssignedAlerts(customDueDateYMD = null) {
     try {
       const now = new Date();
       const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       const yesterdayYMD = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+      const targetDueYMD = customDueDateYMD || todayYMD;
 
       // 1) Просроченные (до конца вчерашнего дня)
       const overdueFilter = {
@@ -470,13 +512,13 @@
         deadlineTo: `${yesterdayYMD}T23:59:59+03:00`
       };
 
-      // 2) Срок истекает сегодня
+      // 2) Срок истекает в выбранную дату (по умолчанию сегодня)
       const dueTodayFilter = {
         statusIn: OPEN_SED_STATUSES,
         documentCreatedFrom: "2026-01-01T00:00:00+03:00",
         documentCreatedTo: "2027-12-31T23:59:59+03:00",
-        deadlineFrom: `${todayYMD}T00:00:00+03:00`,
-        deadlineTo: `${todayYMD}T23:59:59+03:00`
+        deadlineFrom: `${targetDueYMD}T00:00:00+03:00`,
+        deadlineTo: `${targetDueYMD}T23:59:59+03:00`
       };
 
       // 3) Все документы в работе сейчас (statusIn: ["ASSIGNED"])
@@ -486,7 +528,7 @@
         documentCreatedTo: "2027-12-31T23:59:59+03:00"
       };
 
-      sendLog('info', `Запрос дедлайнов и документов в работе (ASSIGNED)...`);
+      sendLog('info', `Запрос дедлайнов (на ${targetDueYMD}) и документов в работе (ASSIGNED)...`);
 
       const [overdueDocs, dueTodayDocs, assignedDocs] = await Promise.all([
         fetchAllByFilter(overdueFilter),
@@ -494,13 +536,13 @@
         fetchAllByFilter(assignedFilter)
       ]);
 
-      sendLog('success', `Доп. данные загружены: В работе (ASSIGNED) = ${assignedDocs.length} шт., Просрочено = ${overdueDocs.length} шт., Срок сегодня = ${dueTodayDocs.length} шт.`);
+      sendLog('success', `Доп. данные загружены: В работе (ASSIGNED) = ${assignedDocs.length} шт., Просрочено = ${overdueDocs.length} шт., Истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
 
       window.postMessage({
         source: 'CRM_INJECTOR',
         type: 'DEADLINES_RESULT',
         payload: {
-          todayYMD,
+          todayYMD: targetDueYMD,
           yesterdayYMD,
           overdueDocs,
           dueTodayDocs,
@@ -512,7 +554,7 @@
     }
   }
 
-  async function liveFetchByDate(targetDateYMD, mode) {
+  async function liveFetchByDate(targetDateYMD, mode, customDueDateYMD = null) {
     isLiveFetching = false;
     await new Promise(r => setTimeout(r, 60));
     isLiveFetching = true;
@@ -661,7 +703,7 @@
         }, '*');
 
         if (activeMode === 'executors') {
-          await fetchDeadlinesAndAssignedAlerts();
+          await fetchDeadlinesAndAssignedAlerts(customDueDateYMD);
         }
       }
     } catch (err) {
@@ -683,7 +725,12 @@
     if (!event.data || event.data.source !== 'CRM_BRIDGE') return;
 
     if (event.data.type === 'FETCH_DATE') {
-      liveFetchByDate(event.data.payload.dateYMD, event.data.payload.mode);
+      const p = event.data.payload || {};
+      liveFetchByDate(p.dateYMD, p.mode, p.dueDateYMD);
+    }
+    if (event.data.type === 'FETCH_DUE_DATE') {
+      const p = event.data.payload || {};
+      fetchSingleDueDateDocs(p.dueDateYMD);
     }
     if (event.data.type === 'STOP_FETCH') {
       sendLog('warn', 'Запрос остановлен пользователем.');

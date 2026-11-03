@@ -15,6 +15,7 @@ let rawAssignedDocs = [];
 let filteredOverdueDocs = [];
 let filteredDueTodayDocs = [];
 let isDeadlinesLoading = false;
+let isDueDateSingleLoading = false;
 
 const ASSIGN_STATE = {
   Overdue: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null },
@@ -59,6 +60,17 @@ const CHECK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><
 const COPY_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="8.5" height="8.5" rx="1.8" fill="currentColor"/><path d="M6 13.2H11.4C12.3941 13.2 13.2 12.3941 13.2 11.4V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 const CHATZONE_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2.5C4.686 2.5 2 4.79 2 7.62C2 9.15 2.785 10.525 4.03 11.46L3.45 13.65L6.03 12.48C6.655 12.65 7.315 12.74 8 12.74C11.314 12.74 14 10.45 14 7.62C14 4.79 11.314 2.5 8 2.5Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/></svg>`;
 
+const INCOMING_ARROW_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M12.5 3.5L3.5 12.5M3.5 12.5H10.5M3.5 12.5V5.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const OUTGOING_ARROW_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3.5 12.5L12.5 3.5M12.5 3.5H5.5M12.5 3.5V10.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function getHeadingBadgeHtml(heading) {
+  const isInc = heading === 'INCOMING';
+  const dirClass = isInc ? 'dir-INCOMING' : 'dir-OUTGOING';
+  const titleText = formatHeadingRu(heading);
+  const iconSvg = isInc ? INCOMING_ARROW_SVG : OUTGOING_ARROW_SVG;
+  return `<span class="dir-badge dir-icon-badge ${dirClass}" title="Направление: ${titleText}">${iconSvg}</span>`;
+}
+
 (function injectAssignedStyles() {
   const st = document.createElement('style');
   st.textContent = `
@@ -101,7 +113,6 @@ function buildPersonActionButtonsHtml(upn) {
   </span>`;
 }
 
-// === УПРАВЛЕНИЕ РАЗМЕРАМИ (ПЕРВЫЙ СТОЛБЕЦ, ВЫСОТА ТАБЛИЦЫ, ШИРИНА САЙДБАРА) ===
 function initCustomDimensions() {
   const savedColW = localStorage.getItem('o3_sed_first_col_w');
   if (savedColW) document.documentElement.style.setProperty('--first-col-width', `${savedColW}px`);
@@ -185,7 +196,6 @@ document.addEventListener('mousedown', (e) => {
   }
 });
 
-// Синхронное разворачивание/сворачивание обоих аккордеонов дедлайнов
 function bindSyncAccordions() {
   const accOver = document.getElementById('accOverdue');
   const accToday = document.getElementById('accDueToday');
@@ -411,6 +421,27 @@ function closeAllMultiSelects() {
   document.querySelectorAll('.o3-field.open').forEach(el => el.classList.remove('open'));
 }
 
+function setFiltersSkeleton(prefix, show) {
+  const fields = ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Mark'];
+  fields.forEach(f => {
+    const containerId = `${prefix}Wrap${f}`;
+    const el = document.getElementById(containerId);
+    const st = multiSelectRegistry.get(containerId);
+    if (!el || !st) return;
+    const valEl = el.querySelector('.o3-field-value');
+    if (!valEl) return;
+
+    if (show) {
+      el.classList.remove('open');
+      el.classList.add('loading-sk');
+      valEl.innerHTML = `<span class="sk-filter-val"></span>`;
+    } else {
+      el.classList.remove('loading-sk');
+      updateMultiSelectHeader(st);
+    }
+  });
+}
+
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.o3-field')) closeAllMultiSelects();
   if (!e.target.closest('.op-picker-wrap')) {
@@ -599,9 +630,19 @@ function getDocType(d) { return d.documentTypeName || 'Не указан'; }
 function getQueueName(d) { return (d.ticket && d.ticket.queue && d.ticket.queue.name) || 'Без очереди'; }
 function getMarksArray(d) { return (Array.isArray(d.ticketMarks) ? d.ticketMarks : []).map(m => m && m.name).filter(Boolean); }
 
+function getSkCardsMarkup() {
+  return `<div style="padding:12px;">
+    <div class="sk-line" style="height:54px;"></div>
+    <div class="sk-line" style="height:54px;"></div>
+    <div class="sk-line" style="height:54px; margin-bottom:0;"></div>
+  </div>`;
+}
+
 function showSkeleton(prefix, show) {
   document.getElementById(`${prefix}Skeleton`).style.display = show ? 'block' : 'none';
   document.getElementById(`${prefix}Table`).style.display = show ? 'none' : 'table';
+
+  setFiltersSkeleton(prefix, show);
 
   const asOfEl = document.getElementById(`${prefix}AsOfTime`);
   if (asOfEl && show) {
@@ -609,11 +650,7 @@ function showSkeleton(prefix, show) {
   }
 
   if (prefix === 'ex' && show) {
-    const skCardsHtml = `<div style="padding:12px;">
-      <div class="sk-line" style="height:54px;"></div>
-      <div class="sk-line" style="height:54px;"></div>
-      <div class="sk-line" style="height:54px; margin-bottom:0;"></div>
-    </div>`;
+    const skCardsHtml = getSkCardsMarkup();
     const lOver = document.getElementById('listOverdue');
     const lToday = document.getElementById('listDueToday');
     if (lOver) lOver.innerHTML = skCardsHtml;
@@ -656,6 +693,9 @@ async function fetchWidgetData(mode) {
   const dateYMD = document.getElementById(`${p}Date`).value;
   if (!dateYMD) return;
 
+  const dueDateInput = document.getElementById('dueTargetDate');
+  const dueDateYMD = (dueDateInput && dueDateInput.value) || dateYMD;
+
   if (mode === 'executors') isDeadlinesLoading = true;
 
   document.getElementById(`${p}SysDate`).innerText = formatYMDToRu(dateYMD);
@@ -675,12 +715,46 @@ async function fetchWidgetData(mode) {
   }
 
   try {
-    await ensureConnectionAndSend(tab.id, { target: 'INJECTOR', type: 'FETCH_DATE', payload: { dateYMD, mode } });
+    await ensureConnectionAndSend(tab.id, {
+      target: 'INJECTOR',
+      type: 'FETCH_DATE',
+      payload: { dateYMD, mode, dueDateYMD }
+    });
   } catch (e) {
     isDeadlinesLoading = false;
     showSkeleton(p, false);
     setProgress(p, true, 'Ошибка связи со вкладкой СЭД: ' + e.message);
     addLog('error', 'Ошибка при отправке команды FETCH_DATE', e.stack || e.message);
+  }
+}
+
+async function fetchCustomDueDateOnly() {
+  const dueDateInput = document.getElementById('dueTargetDate');
+  const dueDateYMD = dueDateInput ? dueDateInput.value : '';
+  if (!dueDateYMD) return;
+
+  isDueDateSingleLoading = true;
+  const lToday = document.getElementById('listDueToday');
+  const bToday = document.getElementById('badgeDueTodayCount');
+  if (lToday) lToday.innerHTML = getSkCardsMarkup();
+  if (bToday) bToday.innerHTML = `<span class="sk-pill"></span>`;
+
+  const tab = await findSedTab();
+  if (!tab) {
+    isDueDateSingleLoading = false;
+    renderDeadlineAccordions();
+    return;
+  }
+
+  try {
+    await ensureConnectionAndSend(tab.id, {
+      target: 'INJECTOR',
+      type: 'FETCH_DUE_DATE',
+      payload: { dueDateYMD }
+    });
+  } catch (e) {
+    isDueDateSingleLoading = false;
+    renderDeadlineAccordions();
   }
 }
 
@@ -763,7 +837,6 @@ function renderDeadlineCardsList(docs, section) {
     const docTitle = d.documentName || d.id;
     const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
     const marksHtml = getMarksArray(d).map(m => `<span class="mark-pill">${m}</span>`).join('');
-    const dirClass = d.heading === 'INCOMING' ? 'dir-INCOMING' : 'dir-OUTGOING';
 
     const creatorActions = buildPersonActionButtonsHtml(getCreatorUpn(d));
     const operatorActions = buildPersonActionButtonsHtml(getOperatorUpn(d));
@@ -776,7 +849,7 @@ function renderDeadlineCardsList(docs, section) {
         </div>
         <div class="doc-badges-row">
           ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">Назначить</button>` : ''}
-          <span class="dir-badge ${dirClass}">${formatHeadingRu(d.heading)}</span>
+          ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
           <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
         </div>
@@ -799,17 +872,18 @@ function renderDeadlineAccordions() {
   filteredDueTodayDocs = filterAlertDocsByExecutorsUI(rawDueTodayDocs);
 
   const bOver = document.getElementById('badgeOverdueCount');
-  const bToday = document.getElementById('badgeDueTodayCount');
-  if (bOver) bOver.innerText = filteredOverdueDocs.length;
-  if (bToday) bToday.innerText = filteredDueTodayDocs.length;
-
   const lOver = document.getElementById('listOverdue');
-  const lToday = document.getElementById('listDueToday');
+  if (bOver) bOver.innerText = filteredOverdueDocs.length;
   if (lOver) lOver.innerHTML = renderDeadlineCardsList(filteredOverdueDocs, 'Overdue');
-  if (lToday) lToday.innerHTML = renderDeadlineCardsList(filteredDueTodayDocs, 'DueToday');
-
   updateAssignToolbarState('Overdue');
-  updateAssignToolbarState('DueToday');
+
+  if (!isDueDateSingleLoading) {
+    const bToday = document.getElementById('badgeDueTodayCount');
+    const lToday = document.getElementById('listDueToday');
+    if (bToday) bToday.innerText = filteredDueTodayDocs.length;
+    if (lToday) lToday.innerHTML = renderDeadlineCardsList(filteredDueTodayDocs, 'DueToday');
+    updateAssignToolbarState('DueToday');
+  }
 }
 
 async function requestOperatorsSearch(section, queryText) {
@@ -1095,11 +1169,20 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'DEADLINES_RESULT' && msg.payload) {
     isDeadlinesLoading = false;
+    isDueDateSingleLoading = false;
     rawOverdueDocs = msg.payload.overdueDocs || [];
     rawDueTodayDocs = msg.payload.dueTodayDocs || [];
     rawAssignedDocs = msg.payload.assignedDocs || [];
     populateDropdowns('executors');
     renderWidgetTable('executors');
+    return;
+  }
+  if (msg.type === 'DUE_DATE_RESULT' && msg.payload) {
+    isDueDateSingleLoading = false;
+    rawDueTodayDocs = msg.payload.dueTodayDocs || [];
+    ASSIGN_STATE.DueToday.selectedAlertIds.clear();
+    populateDropdowns('executors');
+    renderDeadlineAccordions();
     return;
   }
   if (msg.type === 'SEARCH_OPERATORS_RESULT' && msg.payload) {
@@ -1146,7 +1229,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'LIVE_ERROR') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
-    if (mode === 'executors') isDeadlinesLoading = false;
+    if (mode === 'executors') {
+      isDeadlinesLoading = false;
+      isDueDateSingleLoading = false;
+    }
     const p = STATE[mode].prefix;
     showSkeleton(p, false);
     const errText = msg.payload.message || String(msg.payload);
@@ -1550,7 +1636,6 @@ function renderDrawerList(q) {
     const docTitle = d.documentName || d.id;
     const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
     const marksHtml = getMarksArray(d).map(m => `<span class="mark-pill">${m}</span>`).join('');
-    const dirClass = d.heading === 'INCOMING' ? 'dir-INCOMING' : 'dir-OUTGOING';
 
     const creatorActions = buildPersonActionButtonsHtml(getCreatorUpn(d));
     const operatorActions = buildPersonActionButtonsHtml(getOperatorUpn(d));
@@ -1560,7 +1645,7 @@ function renderDrawerList(q) {
       <div class="doc-top">
         <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} (Открыть ↗)</a>
         <div class="doc-badges-row">
-          <span class="dir-badge ${dirClass}">${formatHeadingRu(d.heading)}</span>
+          ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
           <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
         </div>
@@ -1603,7 +1688,7 @@ function bindWidgetEvents(mode) {
   initMultiSelect(`${p}WrapGroup`, mode === 'registrars' ? 'Группа регистраторов' : 'Группа исполнителей', 'Все группы', rerender);
   initMultiSelect(`${p}WrapPerson`, mode === 'registrars' ? 'Регистратор' : 'Исполнитель', mode === 'registrars' ? 'Все регистраторы' : 'Все исполнители', rerender);
   initMultiSelect(`${p}WrapQueue`, 'Очередь', 'Все очереди', rerender);
-  initMultiSelect(`${p}WrapMark`, 'Метка тикета (Marks)', 'Все метки', rerender);
+  initMultiSelect(`${p}WrapMark`, 'Метка тикета', 'Все метки', rerender);
 
   document.getElementById(`${p}Table`).addEventListener('click', (e) => {
     if (e.target.closest('.col-resizer') || e.target.closest('[data-copy-upn]') || e.target.closest('[data-chatzone-link]')) return;
@@ -1757,7 +1842,8 @@ if (btnCsvTodayEl) {
   btnCsvTodayEl.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    exportAlertDocsCsv(filteredDueTodayDocs, 'sed_due_today_documents.csv');
+    const dueDt = (document.getElementById('dueTargetDate') && document.getElementById('dueTargetDate').value) || 'today';
+    exportAlertDocsCsv(filteredDueTodayDocs, `sed_due_${dueDt}_documents.csv`);
   };
 }
 
@@ -1834,6 +1920,13 @@ async function checkForGithubUpdates() {
   const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   document.getElementById('exDate').value = ymd;
   document.getElementById('rgDate').value = ymd;
+
+  const dueDateEl = document.getElementById('dueTargetDate');
+  if (dueDateEl) {
+    dueDateEl.value = ymd;
+    dueDateEl.addEventListener('click', (e) => e.stopPropagation());
+    dueDateEl.addEventListener('change', () => fetchCustomDueDateOnly());
+  }
 
   bindWidgetEvents('executors');
   bindWidgetEvents('registrars');

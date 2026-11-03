@@ -125,6 +125,9 @@
     .o3-field.accent-date {
       background: var(--o3-blue-light); border-color: var(--o3-blue);
     }
+    .o3-field.loading-sk {
+      pointer-events: none;
+    }
     .o3-field-label {
       font-size: 11px; font-weight: 500; color: var(--o3-text-sec); line-height: 1.2; margin-bottom: 2px;
     }
@@ -145,6 +148,14 @@
       font-family: inherit;
     }
     body[data-theme="dark"] .o3-date-input { color-scheme: dark; }
+
+    .inline-due-date {
+      border: 1px solid var(--o3-border); background: var(--o3-surface); color: var(--o3-text);
+      border-radius: 6px; padding: 2px 6px; font-size: 11.5px; font-weight: 700;
+      font-family: inherit; cursor: pointer; outline: none; margin: 0 2px;
+    }
+    .inline-due-date:hover, .inline-due-date:focus { border-color: var(--o3-amber); }
+    body[data-theme="dark"] .inline-due-date { color-scheme: dark; }
 
     .o3-dropdown {
       position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; width: max-content; max-width: 320px;
@@ -192,11 +203,11 @@
     details.alert-acc summary {
       padding: 10px 14px; font-weight: 700; font-size: 12.5px; cursor: pointer;
       user-select: none; display: flex; justify-content: space-between; align-items: center;
-      background: var(--o3-bg); color: var(--o3-text); border-radius: 11px 11px 0 0;
+      background: var(--o3-bg); color: var(--o3-text); border-radius: 11px 11px 0 0; gap: 6px;
     }
     .alert-pill {
       display: inline-flex; align-items: center; justify-content: center;
-      padding: 2px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 800; margin-left: 6px;
+      padding: 2px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 800; margin-left: 4px;
     }
     .alert-pill.red { background: rgba(249, 17, 85, 0.14); color: var(--o3-red); }
     .alert-pill.amber { background: rgba(217, 119, 6, 0.15); color: var(--o3-amber); }
@@ -274,6 +285,9 @@
       display: inline-flex; align-items: center; justify-content: center;
       height: 22px; padding: 0 8px; border-radius: 6px;
       font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap;
+    }
+    .dir-badge.dir-icon-badge {
+      width: 22px; padding: 0;
     }
     .btn-single-assign {
       border: 1px solid var(--o3-blue); background: var(--o3-blue-light);
@@ -465,6 +479,11 @@
       background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
       background-size: 200% 100%; animation: shimmer 1.2s infinite linear;
     }
+    .sk-filter-val {
+      display: inline-block; width: 78%; height: 14px; vertical-align: middle; border-radius: 4px; margin-top: 2px;
+      background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite linear;
+    }
     .sk-pill {
       display: inline-block; width: 26px; height: 15px; vertical-align: middle; border-radius: 8px;
       background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
@@ -611,7 +630,7 @@
       </div>
       <div class="top-actions">
         <div class="as-of-badge">Актуально на: <strong id="exAsOfTime">—</strong></div>
-        <button id="exBtnCsv" class="btn btn-light">📥 CSV</button>
+        <button id="exBtnCsv" class="btn btn-light">CSV</button>
         <button id="exBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
       </div>
     </div>
@@ -619,7 +638,7 @@
     <div class="card">
       <div class="filters-grid">
         <div class="o3-field accent-date">
-          <div class="o3-field-label">⚡ Дата закрытия (API)</div>
+          <div class="o3-field-label">⚡ Дата закрытия</div>
           <input type="date" id="exDate" class="o3-date-input">
         </div>
 
@@ -629,7 +648,7 @@
         <div id="exWrapGroup" class="o3-field" data-label="Группа исполнителей"></div>
         <div id="exWrapPerson" class="o3-field" data-label="Исполнитель"></div>
         <div id="exWrapQueue" class="o3-field" data-label="Очередь"></div>
-        <div id="exWrapMark" class="o3-field" data-label="Метка тикета (Marks)"></div>
+        <div id="exWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
         <div style="display:flex; gap:6px; align-items:stretch;">
           <button id="exBtnReload" class="btn btn-primary" style="flex:1;">🔄 Обновить</button>
@@ -649,7 +668,7 @@
       <details id="accOverdue" class="alert-acc overdue">
         <summary>
           <span>🚨 Просроченные документы <span id="badgeOverdueCount" class="alert-pill red">…</span></span>
-          <button id="btnCsvOverdue" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">📥 CSV</button>
+          <button id="btnCsvOverdue" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">CSV</button>
         </summary>
         <div class="assign-toolbar">
           <label class="assign-select-all">
@@ -671,11 +690,15 @@
         </div>
       </details>
 
-      <!-- 2. Срок истекает сегодня -->
+      <!-- 2. Истекает (выбор даты) -->
       <details id="accDueToday" class="alert-acc duetoday">
         <summary>
-          <span>⏳ Срок истекает сегодня <span id="badgeDueTodayCount" class="alert-pill amber">…</span></span>
-          <button id="btnCsvDueToday" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">📥 CSV</button>
+          <span style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
+            ⏳ Истекает
+            <input type="date" id="dueTargetDate" class="inline-due-date" title="Выберите дату истечения срока">
+            <span id="badgeDueTodayCount" class="alert-pill amber">…</span>
+          </span>
+          <button id="btnCsvDueToday" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">CSV</button>
         </summary>
         <div class="assign-toolbar">
           <label class="assign-select-all">
@@ -693,7 +716,7 @@
           <div id="assignStatusDueToday" class="assign-status-line"></div>
         </div>
         <div id="listDueToday" class="alert-body">
-          <div style="padding:14px; color:var(--o3-text-sec);">Загрузка документов со сроком сегодня из API...</div>
+          <div style="padding:14px; color:var(--o3-text-sec);">Загрузка документов по сроку из API...</div>
         </div>
       </details>
     </div>
@@ -748,7 +771,7 @@
       </div>
       <div class="top-actions">
         <div class="as-of-badge">Актуально на: <strong id="rgAsOfTime">—</strong></div>
-        <button id="rgBtnCsv" class="btn btn-light">📥 CSV</button>
+        <button id="rgBtnCsv" class="btn btn-light">CSV</button>
         <button id="rgBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
       </div>
     </div>
@@ -756,7 +779,7 @@
     <div class="card">
       <div class="filters-grid">
         <div class="o3-field accent-date">
-          <div class="o3-field-label">⚡ Дата создания (API)</div>
+          <div class="o3-field-label">⚡ Дата создания</div>
           <input type="date" id="rgDate" class="o3-date-input">
         </div>
 
@@ -766,7 +789,7 @@
         <div id="rgWrapGroup" class="o3-field" data-label="Группа регистраторов"></div>
         <div id="rgWrapPerson" class="o3-field" data-label="Регистратор"></div>
         <div id="rgWrapQueue" class="o3-field" data-label="Очередь"></div>
-        <div id="rgWrapMark" class="o3-field" data-label="Метка тикета (Marks)"></div>
+        <div id="rgWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
         <div style="display:flex; gap:6px; align-items:stretch;">
           <button id="rgBtnReload" class="btn btn-primary" style="flex:1;">🔄 Обновить</button>
@@ -837,7 +860,7 @@
         <div class="drawer-sub" id="drSub"></div>
       </div>
       <div style="display:flex; gap:6px;">
-        <button id="btnDrCsv" class="btn btn-light">📥 Скачать список (CSV)</button>
+        <button id="btnDrCsv" class="btn btn-light">Скачать список (CSV)</button>
         <button id="btnDrClose" class="btn btn-ghost">✕ Закрыть</button>
       </div>
     </div>

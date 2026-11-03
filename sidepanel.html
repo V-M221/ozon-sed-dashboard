@@ -188,7 +188,7 @@
     .o3-dd-item.selected { font-weight: 600; }
 
     /* ===================================================================== */
-    /* ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ НАЗНАЧЕНИЯ ОПЕРАТОРА                */
+    /* ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ НАЗНАЧЕНИЯ И РАССЫЛКИ               */
     /* ===================================================================== */
     .alerts-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
@@ -744,6 +744,7 @@
               <div id="opDdOverdue" class="op-picker-dd"></div>
             </div>
             <button type="button" id="btnAssignOverdue" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled>Назначить</button>
+            <button type="button" id="btnPushOverdue" class="btn btn-amber" style="padding:6px 10px; font-size:11.5px;" disabled title="Отправить напоминание по выбранным просроченным документам в канал Chatzone">Уведомить</button>
           </div>
           <div id="assignStatusOverdue" class="assign-status-line"></div>
         </div>
@@ -986,7 +987,7 @@
         <table class="tags-table">
           <thead>
             <tr>
-              <th style="width:36%;">Название очереди</th>
+              <th style="width:36%;">Название очереди и типы документов</th>
               <th>Дополнительные операторы для тега (опционально, множественный выбор)</th>
             </tr>
           </thead>

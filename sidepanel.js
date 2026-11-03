@@ -26,6 +26,7 @@ const ASSIGN_STATE = {
 
 // Состояние модального окна рассылки уведомлений в Chatzone ("Дополнительные теги")
 const PUSH_MODAL_STATE = {
+  section: 'DueToday',
   docs: [],
   queuesList: [], // [{ queueKey, queueName, docs }]
   extraOperatorsByQueue: new Map(), // queueKey -> Map(upn -> { id, fullName, upn, tag })
@@ -654,7 +655,6 @@ function getDocType(d) { return d.documentTypeName || 'Не указан'; }
 function getQueueName(d) { return (d.ticket && d.ticket.queue && d.ticket.queue.name) || 'Без очереди'; }
 function getMarksArray(d) { return (Array.isArray(d.ticketMarks) ? d.ticketMarks : []).map(m => m && m.name).filter(Boolean); }
 
-
 function getSkCardsMarkup() {
   return `<div style="padding:12px;">
     <div class="sk-line" style="height:54px;"></div>
@@ -846,14 +846,12 @@ function updateAssignToolbarState(section) {
       : (st.selectedAlertIds.size > 0 ? `Назначить (${st.selectedAlertIds.size})` : 'Назначить');
   }
 
-  if (section === 'DueToday') {
-    const btnPushEl = document.getElementById('btnPushDueToday');
-    if (btnPushEl) {
-      btnPushEl.disabled = st.selectedAlertIds.size === 0;
-      btnPushEl.innerText = st.selectedAlertIds.size > 0
-        ? `Уведомить (${st.selectedAlertIds.size})`
-        : 'Уведомить';
-    }
+  const btnPushEl = document.getElementById(`btnPush${section}`);
+  if (btnPushEl) {
+    btnPushEl.disabled = st.selectedAlertIds.size === 0;
+    btnPushEl.innerText = st.selectedAlertIds.size > 0
+      ? `Уведомить (${st.selectedAlertIds.size})`
+      : 'Уведомить';
   }
 }
 
@@ -863,7 +861,6 @@ function renderDeadlineCardsList(docs, section) {
   }
   const st = ASSIGN_STATE[section];
   const sorted = [...docs].sort((a, b) => new Date(a.deadline || 0) - new Date(b.deadline || 0));
-  const isDueToday = (section === 'DueToday');
 
   return sorted.map(d => {
     const t = d.ticket || {};
@@ -885,7 +882,7 @@ function renderDeadlineCardsList(docs, section) {
         </div>
         <div class="doc-badges-row">
           ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">Назначить</button>` : ''}
-          ${isDueToday && alertId ? `<button type="button" class="btn-single-push" data-single-push="${alertId}" title="Отправить напоминание по этому документу в Chatzone">Уведомить</button>` : ''}
+          ${alertId ? `<button type="button" class="btn-single-push" data-single-push="${section}" data-alert-id="${alertId}" title="Отправить напоминание по этому документу в Chatzone">Уведомить</button>` : ''}
           ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
           <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
@@ -973,14 +970,16 @@ function renderOperatorDropdownItems(section, items) {
 // =========================================================================
 // ЛОГИКА РАССЫЛКИ НАПОМИНАНИЙ В CHATZONE (МОДАЛКА "ДОПОЛНИТЕЛЬНЫЕ ТЕГИ")
 // =========================================================================
-function openPushModalForAlertIds(alertIds) {
+function openPushModalForAlertIds(section, alertIds) {
   const idSet = new Set((alertIds || []).map(Number).filter(Boolean));
-  const selectedDocs = filteredDueTodayDocs.filter(d => d.ticket && idSet.has(Number(d.ticket.id)));
+  const sourceDocs = getSectionFilteredDocs(section);
+  const selectedDocs = sourceDocs.filter(d => d.ticket && idSet.has(Number(d.ticket.id)));
   if (!selectedDocs.length) {
     alert('Выберите хотя бы один документ для отправки уведомления!');
     return;
   }
 
+  PUSH_MODAL_STATE.section = section;
   PUSH_MODAL_STATE.docs = selectedDocs;
   PUSH_MODAL_STATE.queuesList = [];
   PUSH_MODAL_STATE.extraOperatorsByQueue.clear();
@@ -1019,10 +1018,20 @@ function renderPushModalTable() {
   if (!tbody) return;
 
   tbody.innerHTML = PUSH_MODAL_STATE.queuesList.map(q => {
+    const typeCounts = new Map();
+    q.docs.forEach(d => {
+      const tName = getDocType(d);
+      typeCounts.set(tName, (typeCounts.get(tName) || 0) + 1);
+    });
+    const typesSummary = Array.from(typeCounts.entries())
+      .map(([tName, cnt]) => cnt > 1 ? `${tName} (${cnt})` : tName)
+      .join(', ');
+
     return `<tr data-push-queue-row="${q.queueKey}">
       <td>
         <div style="font-weight:700; color:var(--o3-text);">${q.queueName}</div>
-        <div style="font-size:11px; color:var(--o3-text-sec); margin-top:2px;">Документов: ${q.docs.length} шт.</div>
+        <div style="font-size:11px; color:var(--o3-text-sec); margin-top:2px;">Документов: <strong>${q.docs.length} шт.</strong></div>
+        <div style="font-size:11px; color:var(--o3-text-sec); margin-top:2px;">Типы: ${typesSummary}</div>
       </td>
       <td>
         <div id="chips_${q.queueKey}" class="tag-chips-wrap"></div>
@@ -1075,6 +1084,8 @@ function renderPushModalOperatorDropdown(queueKey, items) {
 }
 
 function buildQueueMessagesList() {
+  const isOverdue = PUSH_MODAL_STATE.section === 'Overdue';
+
   return PUSH_MODAL_STATE.queuesList.map(q => {
     const extraMap = PUSH_MODAL_STATE.extraOperatorsByQueue.get(q.queueKey) || new Map();
     const extraTagsArr = Array.from(extraMap.values()).map(op => op.tag).filter(Boolean);
@@ -1084,16 +1095,21 @@ function buildQueueMessagesList() {
       const docNum = d.documentName || d.id;
       const docType = getDocType(d);
       const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
+      const docMarkdownLink = `[${docNum}](${docUrl})`;
       const deadlineDate = formatDateOnlyRu(d.deadline);
       const execTag = upnToTag(getOperatorUpn(d));
 
       const tagsForDoc = [execTag, extraTagsStr].filter(Boolean).join(' ');
-      const parts = [docNum, docType, docUrl, deadlineDate];
+      const parts = [];
+      if (isOverdue) {
+        parts.push('Просроченный документ!');
+      }
+      parts.push(docMarkdownLink, docType, deadlineDate);
       if (tagsForDoc) parts.push(tagsForDoc);
       return parts.join(' , ');
     });
 
-    const messageText = `**Очередь: ${q.queueName}**\n` + lines.join('\n');
+    const messageText = `## ${q.queueName}\n` + lines.join('\n');
     return {
       queueName: q.queueName,
       messageText
@@ -1395,7 +1411,7 @@ function bindAssignSectionEvents(section) {
   const clearEl = document.getElementById(`opClear${section}`);
   const ddEl = document.getElementById(`opDd${section}`);
   const btnAssignEl = document.getElementById(`btnAssign${section}`);
-  const btnPushEl = section === 'DueToday' ? document.getElementById('btnPushDueToday') : null;
+  const btnPushEl = document.getElementById(`btnPush${section}`);
   const listEl = document.getElementById(`list${section}`);
 
   if (chkAllEl) {
@@ -1467,7 +1483,7 @@ function bindAssignSectionEvents(section) {
   if (btnPushEl) {
     btnPushEl.addEventListener('click', (e) => {
       e.preventDefault();
-      openPushModalForAlertIds(Array.from(st.selectedAlertIds));
+      openPushModalForAlertIds(section, Array.from(st.selectedAlertIds));
     });
   }
 
@@ -1495,12 +1511,12 @@ function bindAssignSectionEvents(section) {
         return;
       }
 
-      const pushSingleBtn = e.target.closest('[data-single-push]');
+      const pushSingleBtn = e.target.closest(`[data-single-push="${section}"]`);
       if (pushSingleBtn) {
         e.preventDefault();
         e.stopPropagation();
-        const alertId = Number(pushSingleBtn.getAttribute('data-single-push'));
-        if (alertId) openPushModalForAlertIds([alertId]);
+        const alertId = Number(pushSingleBtn.getAttribute('data-alert-id'));
+        if (alertId) openPushModalForAlertIds(section, [alertId]);
       }
     });
   }

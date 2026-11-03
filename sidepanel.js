@@ -1,5 +1,7 @@
 const CRM_BASE_URL = "https://crm.bank.ozon.ru";
 const CHATZONE_BASE_URL = "https://chatzone.o3t.ru/ozon/messages/@";
+const CHATZONE_POSTS_API_URL = "https://chatzone.o3t.ru/api/v4/posts";
+const CHATZONE_TARGET_CHANNEL_ID = "qdgf4un9p3f6mp543oi9uqne9c";
 
 let drillStore = new Map();
 let assignedTooltipStore = new Map();
@@ -20,6 +22,15 @@ let isDueDateSingleLoading = false;
 const ASSIGN_STATE = {
   Overdue: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null },
   DueToday: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null }
+};
+
+// Состояние модального окна рассылки уведомлений в Chatzone ("Дополнительные теги")
+const PUSH_MODAL_STATE = {
+  docs: [],
+  queuesList: [], // [{ queueKey, queueName, docs }]
+  extraOperatorsByQueue: new Map(), // queueKey -> Map(upn -> { id, fullName, upn, tag })
+  debounceTimers: new Map(),
+  isSending: false
 };
 
 const OPERATOR_STATUS_MAP = {
@@ -69,6 +80,12 @@ function getHeadingBadgeHtml(heading) {
   const titleText = formatHeadingRu(heading);
   const iconSvg = isInc ? INCOMING_ARROW_SVG : OUTGOING_ARROW_SVG;
   return `<span class="dir-badge dir-icon-badge ${dirClass}" title="Направление: ${titleText}">${iconSvg}</span>`;
+}
+
+function upnToTag(upn) {
+  if (!upn) return '';
+  const clean = String(upn).split('@')[0].trim();
+  return clean ? `@${clean}` : '';
 }
 
 (function injectAssignedStyles() {
@@ -511,6 +528,13 @@ function formatYMDToRu(ymd) {
   return `${d}.${m}.${y}`;
 }
 
+function formatDateOnlyRu(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return String(isoStr);
+  return d.toLocaleDateString('ru-RU');
+}
+
 function formatDateTimeRu(isoStr) {
   if (!isoStr) return '—';
   const d = new Date(isoStr);
@@ -629,6 +653,7 @@ function getPersonStatusInfoByMode(d, mode) {
 function getDocType(d) { return d.documentTypeName || 'Не указан'; }
 function getQueueName(d) { return (d.ticket && d.ticket.queue && d.ticket.queue.name) || 'Без очереди'; }
 function getMarksArray(d) { return (Array.isArray(d.ticketMarks) ? d.ticketMarks : []).map(m => m && m.name).filter(Boolean); }
+
 
 function getSkCardsMarkup() {
   return `<div style="padding:12px;">
@@ -820,6 +845,16 @@ function updateAssignToolbarState(section) {
       ? 'Назначение...'
       : (st.selectedAlertIds.size > 0 ? `Назначить (${st.selectedAlertIds.size})` : 'Назначить');
   }
+
+  if (section === 'DueToday') {
+    const btnPushEl = document.getElementById('btnPushDueToday');
+    if (btnPushEl) {
+      btnPushEl.disabled = st.selectedAlertIds.size === 0;
+      btnPushEl.innerText = st.selectedAlertIds.size > 0
+        ? `Уведомить (${st.selectedAlertIds.size})`
+        : 'Уведомить';
+    }
+  }
 }
 
 function renderDeadlineCardsList(docs, section) {
@@ -828,6 +863,7 @@ function renderDeadlineCardsList(docs, section) {
   }
   const st = ASSIGN_STATE[section];
   const sorted = [...docs].sort((a, b) => new Date(a.deadline || 0) - new Date(b.deadline || 0));
+  const isDueToday = (section === 'DueToday');
 
   return sorted.map(d => {
     const t = d.ticket || {};
@@ -844,11 +880,12 @@ function renderDeadlineCardsList(docs, section) {
     return `<div class="doc-card ${isChecked ? 'selected-doc' : ''}" data-card-alert-id="${alertId}">
       <div class="doc-top">
         <div style="display:flex; align-items:center; gap:7px;">
-          ${alertId ? `<input type="checkbox" class="doc-check-input" data-doc-check="${section}" data-alert-id="${alertId}" ${isChecked ? 'checked' : ''} title="Выбрать для назначения оператора">` : ''}
+          ${alertId ? `<input type="checkbox" class="doc-check-input" data-doc-check="${section}" data-alert-id="${alertId}" ${isChecked ? 'checked' : ''} title="Выбрать документ">` : ''}
           <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} ↗</a>
         </div>
         <div class="doc-badges-row">
           ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">Назначить</button>` : ''}
+          ${isDueToday && alertId ? `<button type="button" class="btn-single-push" data-single-push="${alertId}" title="Отправить напоминание по этому документу в Chatzone">Уведомить</button>` : ''}
           ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
           <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
@@ -905,6 +942,11 @@ async function requestOperatorsSearch(section, queryText) {
 }
 
 function renderOperatorDropdownItems(section, items) {
+  if (section && section.startsWith('PushQ_')) {
+    renderPushModalOperatorDropdown(section, items);
+    return;
+  }
+
   const st = ASSIGN_STATE[section];
   if (!st) return;
   st.searchResults = items || [];
@@ -926,6 +968,310 @@ function renderOperatorDropdownItems(section, items) {
     </div>`;
   }).join('');
   ddEl.classList.add('open');
+}
+
+// =========================================================================
+// ЛОГИКА РАССЫЛКИ НАПОМИНАНИЙ В CHATZONE (МОДАЛКА "ДОПОЛНИТЕЛЬНЫЕ ТЕГИ")
+// =========================================================================
+function openPushModalForAlertIds(alertIds) {
+  const idSet = new Set((alertIds || []).map(Number).filter(Boolean));
+  const selectedDocs = filteredDueTodayDocs.filter(d => d.ticket && idSet.has(Number(d.ticket.id)));
+  if (!selectedDocs.length) {
+    alert('Выберите хотя бы один документ для отправки уведомления!');
+    return;
+  }
+
+  PUSH_MODAL_STATE.docs = selectedDocs;
+  PUSH_MODAL_STATE.queuesList = [];
+  PUSH_MODAL_STATE.extraOperatorsByQueue.clear();
+  PUSH_MODAL_STATE.isSending = false;
+
+  const grouped = new Map();
+  selectedDocs.forEach(d => {
+    const qName = getQueueName(d);
+    if (!grouped.has(qName)) grouped.set(qName, []);
+    grouped.get(qName).push(d);
+  });
+
+  let idx = 0;
+  for (const [queueName, qDocs] of grouped.entries()) {
+    const queueKey = `PushQ_${++idx}`;
+    PUSH_MODAL_STATE.queuesList.push({ queueKey, queueName, docs: qDocs });
+    PUSH_MODAL_STATE.extraOperatorsByQueue.set(queueKey, new Map());
+  }
+
+  renderPushModalTable();
+  updatePushModalPreview();
+
+  const statusEl = document.getElementById('pushModalStatus');
+  if (statusEl) statusEl.innerText = '';
+  const btnSend = document.getElementById('btnConfirmPushSend');
+  if (btnSend) {
+    btnSend.disabled = false;
+    btnSend.innerText = `Отправить в Chatzone (${PUSH_MODAL_STATE.queuesList.length} сообщ.)`;
+  }
+
+  document.getElementById('pushModal').classList.add('open');
+}
+
+function renderPushModalTable() {
+  const tbody = document.getElementById('pushModalTableBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = PUSH_MODAL_STATE.queuesList.map(q => {
+    return `<tr data-push-queue-row="${q.queueKey}">
+      <td>
+        <div style="font-weight:700; color:var(--o3-text);">${q.queueName}</div>
+        <div style="font-size:11px; color:var(--o3-text-sec); margin-top:2px;">Документов: ${q.docs.length} шт.</div>
+      </td>
+      <td>
+        <div id="chips_${q.queueKey}" class="tag-chips-wrap"></div>
+        <div class="op-picker-wrap">
+          <input type="text" id="opInput${q.queueKey}" class="op-picker-input" data-push-qkey="${q.queueKey}" placeholder="Найти и добавить операторов по ФИО или email..." autocomplete="off">
+          <div id="opDd${q.queueKey}" class="op-picker-dd" data-push-dd="${q.queueKey}"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderQueueChips(queueKey) {
+  const wrap = document.getElementById(`chips_${queueKey}`);
+  const map = PUSH_MODAL_STATE.extraOperatorsByQueue.get(queueKey);
+  if (!wrap || !map) return;
+
+  wrap.innerHTML = Array.from(map.values()).map(op => {
+    const safeUpn = op.upn.replace(/"/g, '&quot;');
+    return `<span class="tag-chip" title="${op.fullName} (${op.upn})">
+      ${op.tag} <span style="font-weight:400; opacity:0.85;">(${op.fullName || op.upn})</span>
+      <button type="button" data-remove-chip-q="${queueKey}" data-remove-chip-upn="${safeUpn}" title="Удалить тег">✕</button>
+    </span>`;
+  }).join('');
+}
+
+function renderPushModalOperatorDropdown(queueKey, items) {
+  const ddEl = document.getElementById(`opDd${queueKey}`);
+  if (!ddEl) return;
+
+  if (!items || items.length === 0) {
+    ddEl.innerHTML = `<div class="op-dd-empty">Операторы не найдены</div>`;
+    ddEl.classList.add('open');
+    return;
+  }
+
+  const selectedMap = PUSH_MODAL_STATE.extraOperatorsByQueue.get(queueKey) || new Map();
+
+  ddEl.innerHTML = items.map(op => {
+    const isSel = selectedMap.has(op.upn);
+    const safeName = String(op.fullName || '').replace(/"/g, '&quot;');
+    const safeUpn = String(op.upn || '').replace(/"/g, '&quot;');
+    const tag = upnToTag(op.upn);
+    return `<div class="op-dd-option ${isSel ? 'active' : ''}" data-push-opt-q="${queueKey}" data-op-id="${op.id}" data-op-name="${safeName}" data-op-upn="${safeUpn}">
+      <span class="op-dd-name">${op.fullName || op.upn} ${isSel ? '✓' : ''}</span>
+      <span class="op-dd-upn">${tag} (${op.upn})</span>
+    </div>`;
+  }).join('');
+  ddEl.classList.add('open');
+}
+
+function buildQueueMessagesList() {
+  return PUSH_MODAL_STATE.queuesList.map(q => {
+    const extraMap = PUSH_MODAL_STATE.extraOperatorsByQueue.get(q.queueKey) || new Map();
+    const extraTagsArr = Array.from(extraMap.values()).map(op => op.tag).filter(Boolean);
+    const extraTagsStr = extraTagsArr.join(' ');
+
+    const lines = q.docs.map(d => {
+      const docNum = d.documentName || d.id;
+      const docType = getDocType(d);
+      const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
+      const deadlineDate = formatDateOnlyRu(d.deadline);
+      const execTag = upnToTag(getOperatorUpn(d));
+
+      const tagsForDoc = [execTag, extraTagsStr].filter(Boolean).join(' ');
+      const parts = [docNum, docType, docUrl, deadlineDate];
+      if (tagsForDoc) parts.push(tagsForDoc);
+      return parts.join(' , ');
+    });
+
+    const messageText = `**Очередь: ${q.queueName}**\n` + lines.join('\n');
+    return {
+      queueName: q.queueName,
+      messageText
+    };
+  });
+}
+
+function updatePushModalPreview() {
+  const previewEl = document.getElementById('pushPreviewBox');
+  if (!previewEl) return;
+  const msgs = buildQueueMessagesList();
+  previewEl.textContent = msgs.map((m, idx) => `--- Сообщение #${idx + 1} (${m.queueName}) ---\n${m.messageText}`).join('\n\n');
+}
+
+async function sendSingleChatzonePost(messageText) {
+  let csrfToken = '';
+  try {
+    if (chrome.cookies && chrome.cookies.get) {
+      const cookie = await chrome.cookies.get({ url: 'https://chatzone.o3t.ru', name: 'MMCSRF' });
+      if (cookie && cookie.value) csrfToken = cookie.value;
+    }
+  } catch (e) {}
+
+  const headers = {
+    'accept': 'application/json',
+    'content-type': 'application/json',
+    'x-requested-with': 'XMLHttpRequest'
+  };
+  if (csrfToken) {
+    headers['x-csrf-token'] = csrfToken;
+  }
+
+  const bodyObj = {
+    file_ids: [],
+    message: messageText,
+    props: { hidePreview: false },
+    metadata: {},
+    channel_id: CHATZONE_TARGET_CHANNEL_ID,
+    root_id: "",
+    create_at: 0,
+    update_at: Date.now(),
+    reply_count: 0
+  };
+
+  const res = await fetch(CHATZONE_POSTS_API_URL, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: JSON.stringify(bodyObj)
+  });
+
+  if (!res.ok) {
+    let errTxt = '';
+    try { errTxt = await res.text(); } catch (e) {}
+    throw new Error(`HTTP ${res.status}: ${errTxt.slice(0, 150)}`);
+  }
+  return res.json();
+}
+
+async function executePushMessagesSend() {
+  if (PUSH_MODAL_STATE.isSending) return;
+  const messages = buildQueueMessagesList();
+  if (!messages.length) return;
+
+  PUSH_MODAL_STATE.isSending = true;
+  const statusEl = document.getElementById('pushModalStatus');
+  const btnSend = document.getElementById('btnConfirmPushSend');
+  if (btnSend) btnSend.disabled = true;
+
+  let sentCount = 0;
+  try {
+    for (let i = 0; i < messages.length; i++) {
+      const item = messages[i];
+      if (statusEl) {
+        statusEl.style.color = 'var(--o3-blue)';
+        statusEl.innerText = `⏳ Отправка сообщения ${i + 1} из ${messages.length} (${item.queueName})...`;
+      }
+      await sendSingleChatzonePost(item.messageText);
+      sentCount++;
+      addLog('success', `Отправлено уведомление в Chatzone по очереди «${item.queueName}»`);
+    }
+
+    if (statusEl) {
+      statusEl.style.color = 'var(--o3-green)';
+      statusEl.innerText = `✅ Успешно отправлено ${sentCount} сообщ. в Chatzone!`;
+    }
+    setTimeout(() => {
+      document.getElementById('pushModal').classList.remove('open');
+    }, 900);
+  } catch (err) {
+    addLog('error', `Ошибка отправки в Chatzone: ${err.message}`);
+    if (statusEl) {
+      statusEl.style.color = 'var(--o3-red)';
+      statusEl.innerText = `❌ Ошибка: ${err.message} (убедитесь, что вы авторизованы в chatzone.o3t.ru)`;
+    }
+    if (btnSend) btnSend.disabled = false;
+  } finally {
+    PUSH_MODAL_STATE.isSending = false;
+  }
+}
+
+function bindPushModalEvents() {
+  const modalEl = document.getElementById('pushModal');
+  const tbody = document.getElementById('pushModalTableBody');
+  const btnClose = document.getElementById('btnClosePushModal');
+  const btnCancel = document.getElementById('btnCancelPushModal');
+  const btnConfirm = document.getElementById('btnConfirmPushSend');
+
+  const closeModal = () => {
+    if (modalEl) modalEl.classList.remove('open');
+  };
+  if (btnClose) btnClose.onclick = closeModal;
+  if (btnCancel) btnCancel.onclick = closeModal;
+  if (btnConfirm) btnConfirm.onclick = () => executePushMessagesSend();
+
+  if (tbody) {
+    tbody.addEventListener('focusin', (e) => {
+      const inp = e.target.closest('[data-push-qkey]');
+      if (!inp) return;
+      const qKey = inp.getAttribute('data-push-qkey');
+      requestOperatorsSearch(qKey, inp.value.trim());
+    });
+
+    tbody.addEventListener('input', (e) => {
+      const inp = e.target.closest('[data-push-qkey]');
+      if (!inp) return;
+      const qKey = inp.getAttribute('data-push-qkey');
+      const prevTimer = PUSH_MODAL_STATE.debounceTimers.get(qKey);
+      if (prevTimer) clearTimeout(prevTimer);
+
+      const timer = setTimeout(() => {
+        requestOperatorsSearch(qKey, inp.value.trim());
+      }, 260);
+      PUSH_MODAL_STATE.debounceTimers.set(qKey, timer);
+    });
+
+    tbody.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('[data-remove-chip-q]');
+      if (removeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const qKey = removeBtn.getAttribute('data-remove-chip-q');
+        const upn = removeBtn.getAttribute('data-remove-chip-upn');
+        const map = PUSH_MODAL_STATE.extraOperatorsByQueue.get(qKey);
+        if (map && upn) {
+          map.delete(upn);
+          renderQueueChips(qKey);
+          updatePushModalPreview();
+        }
+        return;
+      }
+
+      const opt = e.target.closest('[data-push-opt-q]');
+      if (opt) {
+        e.preventDefault();
+        e.stopPropagation();
+        const qKey = opt.getAttribute('data-push-opt-q');
+        const upn = opt.getAttribute('data-op-upn') || '';
+        const fullName = opt.getAttribute('data-op-name') || '';
+        const id = Number(opt.getAttribute('data-op-id'));
+        const tag = upnToTag(upn);
+
+        if (qKey && upn && tag) {
+          const map = PUSH_MODAL_STATE.extraOperatorsByQueue.get(qKey);
+          if (map) {
+            if (map.has(upn)) map.delete(upn);
+            else map.set(upn, { id, fullName, upn, tag });
+            renderQueueChips(qKey);
+            updatePushModalPreview();
+          }
+        }
+        const ddEl = document.getElementById(`opDd${qKey}`);
+        if (ddEl) ddEl.classList.remove('open');
+        const inpEl = document.getElementById(`opInput${qKey}`);
+        if (inpEl) inpEl.value = '';
+      }
+    });
+  }
 }
 
 function selectAssignOperator(section, op) {
@@ -1049,6 +1395,7 @@ function bindAssignSectionEvents(section) {
   const clearEl = document.getElementById(`opClear${section}`);
   const ddEl = document.getElementById(`opDd${section}`);
   const btnAssignEl = document.getElementById(`btnAssign${section}`);
+  const btnPushEl = section === 'DueToday' ? document.getElementById('btnPushDueToday') : null;
   const listEl = document.getElementById(`list${section}`);
 
   if (chkAllEl) {
@@ -1117,6 +1464,13 @@ function bindAssignSectionEvents(section) {
     });
   }
 
+  if (btnPushEl) {
+    btnPushEl.addEventListener('click', (e) => {
+      e.preventDefault();
+      openPushModalForAlertIds(Array.from(st.selectedAlertIds));
+    });
+  }
+
   if (listEl) {
     listEl.addEventListener('change', (e) => {
       const chk = e.target.closest(`[data-doc-check="${section}"]`);
@@ -1133,11 +1487,21 @@ function bindAssignSectionEvents(section) {
 
     listEl.addEventListener('click', (e) => {
       const singleBtn = e.target.closest(`[data-single-assign="${section}"]`);
-      if (!singleBtn) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const alertId = Number(singleBtn.getAttribute('data-alert-id'));
-      if (alertId) triggerAssignTickets(section, [alertId]);
+      if (singleBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const alertId = Number(singleBtn.getAttribute('data-alert-id'));
+        if (alertId) triggerAssignTickets(section, [alertId]);
+        return;
+      }
+
+      const pushSingleBtn = e.target.closest('[data-single-push]');
+      if (pushSingleBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const alertId = Number(pushSingleBtn.getAttribute('data-single-push'));
+        if (alertId) openPushModalForAlertIds([alertId]);
+      }
     });
   }
 }
@@ -1912,6 +2276,7 @@ async function checkForGithubUpdates() {
 (function init() {
   initCustomDimensions();
   bindSyncAccordions();
+  bindPushModalEvents();
 
   const savedTheme = localStorage.getItem('o3_sed_theme') || 'light';
   applyTheme(savedTheme);

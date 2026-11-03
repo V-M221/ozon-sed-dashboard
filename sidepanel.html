@@ -225,10 +225,10 @@
       width: 15px; height: 15px; accent-color: var(--o3-blue); cursor: pointer; margin: 0;
     }
     .assign-controls {
-      display: flex; align-items: center; gap: 6px; flex: 1; min-width: 220px;
+      display: flex; align-items: center; gap: 6px; flex: 1; min-width: 220px; flex-wrap: wrap;
     }
     .op-picker-wrap {
-      position: relative; flex: 1;
+      position: relative; flex: 1; min-width: 150px;
     }
     .op-picker-input {
       width: 100%; padding: 6px 26px 6px 9px; border-radius: 8px;
@@ -277,11 +277,11 @@
       background: var(--o3-blue-light);
     }
 
-    /* Раздельные бейджи Направление / ЮЛ / Статус одинакового размера с кнопкой Назначить */
+    /* Раздельные бейджи Направление / ЮЛ / Статус одинакового размера с кнопками действий */
     .doc-badges-row {
       display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
     }
-    .btn-single-assign, .dir-badge {
+    .btn-single-assign, .btn-single-push, .dir-badge {
       display: inline-flex; align-items: center; justify-content: center;
       height: 22px; padding: 0 8px; border-radius: 6px;
       font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap;
@@ -296,6 +296,13 @@
     .btn-single-assign:hover {
       background: var(--o3-blue); color: #fff;
     }
+    .btn-single-push {
+      border: 1px solid var(--o3-amber); background: rgba(217, 119, 6, 0.12);
+      color: var(--o3-amber); cursor: pointer; transition: 0.12s; font-weight: 700;
+    }
+    .btn-single-push:hover {
+      background: var(--o3-amber); color: #fff;
+    }
     .dir-INCOMING { background: rgba(16, 185, 129, 0.14); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.25); }
     .dir-OUTGOING { background: var(--o3-blue-light); color: var(--o3-blue); border: 1px solid rgba(0, 91, 255, 0.2); }
     .badge-entity { background: var(--o3-bg); color: var(--o3-text); border: 1px solid var(--o3-border); }
@@ -309,10 +316,65 @@
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
     .btn-primary { background: var(--o3-blue); color: #fff; }
     .btn-primary:hover:not(:disabled) { background: var(--o3-blue-hover); }
+    .btn-amber { background: var(--o3-amber); color: #fff; }
+    .btn-amber:hover:not(:disabled) { filter: brightness(0.95); }
     .btn-light { background: var(--o3-blue-light); color: var(--o3-blue); }
     .btn-light:hover:not(:disabled) { filter: brightness(0.95); }
     .btn-ghost { background: var(--o3-bg); color: var(--o3-text-sec); border: 1px solid var(--o3-border); }
     .btn-ghost:hover:not(:disabled) { color: var(--o3-text); border-color: var(--o3-text-muted); }
+
+    /* ===================================================================== */
+    /* МОДАЛЬНОЕ ОКНО РАССЫЛКИ УВЕДОМЛЕНИЙ В CHATZONE ("ДОПОЛНИТЕЛЬНЫЕ ТЕГИ")*/
+    /* ===================================================================== */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0, 26, 52, 0.48); z-index: 200;
+      display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-card {
+      background: var(--o3-surface); border-radius: 14px; border: 1px solid var(--o3-border);
+      box-shadow: var(--o3-dropdown-shadow); width: 100%; max-width: 720px; max-height: 90vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-head {
+      padding: 12px 16px; border-bottom: 1px solid var(--o3-border);
+      display: flex; justify-content: space-between; align-items: center; background: var(--o3-bg);
+    }
+    .modal-title { font-weight: 700; font-size: 14px; color: var(--o3-text); }
+    .modal-body {
+      padding: 14px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px;
+    }
+    .modal-foot {
+      padding: 10px 16px; border-top: 1px solid var(--o3-border); background: var(--o3-bg);
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .tags-table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .tags-table th, .tags-table td {
+      border: 1px solid var(--o3-border-light); padding: 8px 10px; text-align: left; vertical-align: top; white-space: normal;
+    }
+    .tags-table th {
+      background: var(--o3-bg); font-weight: 700; color: var(--o3-text-sec); position: static;
+    }
+    .tag-chips-wrap {
+      display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px;
+    }
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--o3-blue-light); color: var(--o3-blue);
+      padding: 3px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+    }
+    .tag-chip button {
+      border: none; background: transparent; color: var(--o3-blue);
+      cursor: pointer; font-size: 11px; padding: 0 2px; font-weight: 700;
+    }
+    .tag-chip button:hover { color: var(--o3-red); }
+    .push-preview-box {
+      background: var(--o3-bg); border: 1px solid var(--o3-border); border-radius: 10px;
+      padding: 10px 12px; font-family: 'Consolas', 'Monaco', monospace; font-size: 11px;
+      color: var(--o3-text); max-height: 190px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+    }
 
     .progress-bar {
       margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--o3-bg);
@@ -662,7 +724,7 @@
       </div>
     </div>
 
-    <!-- ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ МАССОВОГО НАЗНАЧЕНИЯ ОПЕРАТОРА -->
+    <!-- ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ МАССОВОГО НАЗНАЧЕНИЯ И РАССЫЛКИ -->
     <div class="alerts-grid">
       <!-- 1. Просроченные документы -->
       <details id="accOverdue" class="alert-acc overdue">
@@ -690,7 +752,7 @@
         </div>
       </details>
 
-      <!-- 2. Истекает (выбор даты) -->
+      <!-- 2. Истекает (выбор даты + назначение + пушинг напоминаний в Chatzone) -->
       <details id="accDueToday" class="alert-acc duetoday">
         <summary>
           <span style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
@@ -712,6 +774,7 @@
               <div id="opDdDueToday" class="op-picker-dd"></div>
             </div>
             <button type="button" id="btnAssignDueToday" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled>Назначить</button>
+            <button type="button" id="btnPushDueToday" class="btn btn-amber" style="padding:6px 10px; font-size:11.5px;" disabled title="Отправить напоминание по выбранным документам в канал Chatzone">Уведомить</button>
           </div>
           <div id="assignStatusDueToday" class="assign-status-line"></div>
         </div>
@@ -907,6 +970,42 @@
 
     <input type="text" id="drSearch" class="o3-dd-search" placeholder="Быстрый поиск по номеру документа, тикету, ФИО, корреспонденту..." style="margin-bottom:8px; padding:8px 10px;">
     <div id="drList" class="drawer-list"></div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО "ДОПОЛНИТЕЛЬНЫЕ ТЕГИ" ДЛЯ РАССЫЛКИ В CHATZONE -->
+  <div id="pushModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">Дополнительные теги · Рассылка напоминаний в Chatzone</div>
+          <div style="font-size:11px; color:var(--o3-text-sec); margin-top:2px;">Каждая уникальная очередь будет отправлена отдельным сообщением в канал</div>
+        </div>
+        <button type="button" id="btnClosePushModal" class="btn btn-ghost" style="padding:5px 10px;">✕</button>
+      </div>
+      <div class="modal-body">
+        <table class="tags-table">
+          <thead>
+            <tr>
+              <th style="width:36%;">Название очереди</th>
+              <th>Дополнительные операторы для тега (опционально, множественный выбор)</th>
+            </tr>
+          </thead>
+          <tbody id="pushModalTableBody"></tbody>
+        </table>
+
+        <div>
+          <div style="font-size:11.5px; font-weight:700; color:var(--o3-text-sec); margin-bottom:4px;">Предпросмотр сообщений по очередям:</div>
+          <div id="pushPreviewBox" class="push-preview-box"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <div id="pushModalStatus" style="font-size:11.5px; font-weight:600; color:var(--o3-blue);"></div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" id="btnCancelPushModal" class="btn btn-ghost">Отмена</button>
+          <button type="button" id="btnConfirmPushSend" class="btn btn-primary">Отправить в Chatzone</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="sidepanel.js"></script>

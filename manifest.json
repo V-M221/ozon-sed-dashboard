@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Ozon Банк · СЭД Онлайн-Дашборд",
+  "version": "2.3",
+  "description": "Онлайн-аналитика СЭД напрямую через API (crm.bank.ozon.ru)",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+"host_permissions": [
+    "https://crm.bank.ozon.ru/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://crm.bank.ozon.ru/*"
+      ],
+      "js": ["injector.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://crm.bank.ozon.ru/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
+  "action": {
+    "default_title": "Открыть СЭД Онлайн-Дашборд"
+  }
+}

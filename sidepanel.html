@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Ozon Банк · СЭД Онлайн-Дашборды</title>
+  <style>
+    :root {
+      --first-col-width: 310px;
+      --o3-blue: #005BFF;
+      --o3-blue-hover: #004ECC;
+      --o3-blue-light: #EBF2FF;
+      --o3-text: #001A34;
+      --o3-text-sec: #5C6B7A;
+      --o3-text-muted: #8A99A8;
+      --o3-bg: #F2F5F9;
+      --o3-surface: #FFFFFF;
+      --o3-surface-elevated: #FFFFFF;
+      --o3-surface-hover: #F5F7FA;
+      --o3-group-bg: #F2F6FC;
+      --o3-doctype-bg: #FAFBFD;
+      --o3-border: #D5DCE6;
+      --o3-border-light: #EDF0F4;
+      --o3-green: #059669;
+      --o3-red: #F91155;
+      --o3-amber: #D97706;
+      --o3-shadow: 0 4px 20px rgba(0, 26, 52, 0.08);
+      --o3-dropdown-shadow: 0 8px 28px rgba(0, 26, 52, 0.14);
+    }
+
+    body[data-theme="dark"] {
+      --o3-blue: #2B7BFF;
+      --o3-blue-hover: #478EFF;
+      --o3-blue-light: rgba(43, 123, 255, 0.16);
+      --o3-text: #F2F4F7;
+      --o3-text-sec: #98A2B3;
+      --o3-text-muted: #667085;
+      --o3-bg: #121417;
+      --o3-surface: #1B1E23;
+      --o3-surface-elevated: #262930;
+      --o3-surface-hover: #2E323B;
+      --o3-group-bg: #20252E;
+      --o3-doctype-bg: #171A1E;
+      --o3-border: #343942;
+      --o3-border-light: #262A32;
+      --o3-green: #10B981;
+      --o3-red: #FB7185;
+      --o3-amber: #FBBF24;
+      --o3-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+      --o3-dropdown-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0; padding: 14px; font-size: 12.5px; color: var(--o3-text); background: var(--o3-bg);
+      font-variant-numeric: tabular-nums; transition: background 0.15s, color 0.15s;
+    }
+
+    .header-row {
+      display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+    }
+    .widget-switcher {
+      flex: 1; display: flex; background: var(--o3-border-light); border-radius: 10px; padding: 3px; gap: 3px;
+    }
+    .w-tab {
+      flex: 1; padding: 8px 10px; border: none; border-radius: 8px; cursor: pointer;
+      font-weight: 700; font-size: 12px; background: transparent; color: var(--o3-text-sec);
+      transition: all 0.15s ease; text-align: center;
+    }
+    .w-tab.active {
+      background: var(--o3-surface); color: var(--o3-blue);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    }
+    .theme-btn {
+      padding: 8px 12px; border: 1px solid var(--o3-border); border-radius: 10px;
+      background: var(--o3-surface); color: var(--o3-text); font-weight: 600; font-size: 12px;
+      cursor: pointer; white-space: nowrap; transition: 0.15s;
+    }
+    .theme-btn:hover { border-color: var(--o3-blue); }
+
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 8px; }
+    .brand-logo {
+      background: var(--o3-blue); color: #fff; font-weight: 800; font-size: 12px;
+      padding: 5px 8px; border-radius: 7px; letter-spacing: 0.4px;
+    }
+    .brand-logo.reg { background: var(--o3-green); }
+    .brand-title { font-weight: 700; font-size: 15px; color: var(--o3-text); }
+    .brand-sub { font-size: 11px; color: var(--o3-text-sec); }
+
+    .top-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .as-of-badge {
+      background: var(--o3-surface); border: 1px solid var(--o3-border); border-radius: 8px;
+      padding: 5px 10px; font-size: 11px; color: var(--o3-text-sec);
+    }
+    .as-of-badge strong { color: var(--o3-text); font-weight: 700; }
+
+    .card {
+      background: var(--o3-surface); border-radius: 14px; padding: 12px;
+      margin-bottom: 10px; box-shadow: var(--o3-shadow); border: 1px solid var(--o3-border-light);
+    }
+
+    /* Кастомные мультиселект-фильтры Ozon */
+    .filters-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; align-items: stretch;
+    }
+    .o3-field {
+      position: relative; background: var(--o3-surface); border: 1.5px solid var(--o3-border);
+      border-radius: 12px; padding: 6px 12px; min-height: 48px; cursor: pointer;
+      display: flex; flex-direction: column; justify-content: center;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; user-select: none;
+    }
+    .o3-field:hover { border-color: var(--o3-text-muted); }
+    .o3-field.open, .o3-field:focus-within {
+      border-color: var(--o3-blue);
+      box-shadow: 0 0 0 3px var(--o3-blue-light);
+    }
+    .o3-field.accent-date {
+      background: var(--o3-blue-light); border-color: var(--o3-blue);
+    }
+    .o3-field-label {
+      font-size: 11px; font-weight: 500; color: var(--o3-text-sec); line-height: 1.2; margin-bottom: 2px;
+    }
+    .o3-field.accent-date .o3-field-label { color: var(--o3-blue); font-weight: 700; }
+    .o3-field-value {
+      font-size: 13px; font-weight: 500; color: var(--o3-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px; line-height: 1.3;
+    }
+    .o3-field-arrow {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      font-size: 10px; color: var(--o3-text-sec); pointer-events: none; transition: transform 0.15s;
+    }
+    .o3-field.open .o3-field-arrow { transform: translateY(-50%) rotate(180deg); color: var(--o3-blue); }
+
+    .o3-date-input {
+      border: none; background: transparent; color: var(--o3-text); font-weight: 700;
+      font-size: 13px; padding: 0; margin: 0; outline: none; width: 100%; cursor: pointer;
+      font-family: inherit;
+    }
+    body[data-theme="dark"] .o3-date-input { color-scheme: dark; }
+
+    .o3-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; width: max-content; max-width: 320px;
+      background: var(--o3-surface-elevated); border-radius: 12px; padding: 6px 0;
+      box-shadow: var(--o3-dropdown-shadow); border: 1px solid var(--o3-border);
+      z-index: 90; display: none;
+    }
+    .o3-field.open .o3-dropdown { display: block; }
+
+    .o3-dd-search-wrap { padding: 4px 10px 6px 10px; border-bottom: 1px solid var(--o3-border-light); }
+    .o3-dd-search {
+      width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--o3-border);
+      background: var(--o3-bg); color: var(--o3-text); font-size: 12px; outline: none;
+    }
+    .o3-dd-search:focus { border-color: var(--o3-blue); }
+
+    .o3-dd-list { max-height: 230px; overflow-y: auto; }
+    .o3-dd-item {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 9px 14px; font-size: 13px; color: var(--o3-text); cursor: pointer;
+      transition: background 0.12s;
+    }
+    .o3-dd-item:hover { background: var(--o3-surface-hover); }
+    .o3-dd-item-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .o3-dd-check {
+      width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center;
+      color: var(--o3-blue); opacity: 0; flex-shrink: 0; transition: opacity 0.1s;
+    }
+    .o3-dd-item.selected .o3-dd-check { opacity: 1; }
+    .o3-dd-item.selected { font-weight: 600; }
+
+    /* ===================================================================== */
+    /* ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ НАЗНАЧЕНИЯ ОПЕРАТОРА                */
+    /* ===================================================================== */
+    .alerts-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 10px; margin-bottom: 10px;
+    }
+    details.alert-acc {
+      background: var(--o3-surface); border-radius: 12px; border: 1.5px solid var(--o3-border);
+      box-shadow: var(--o3-shadow); overflow: visible;
+    }
+    details.alert-acc.overdue { border-color: rgba(249, 17, 85, 0.45); }
+    details.alert-acc.duetoday { border-color: rgba(217, 119, 6, 0.45); }
+    details.alert-acc summary {
+      padding: 10px 14px; font-weight: 700; font-size: 12.5px; cursor: pointer;
+      user-select: none; display: flex; justify-content: space-between; align-items: center;
+      background: var(--o3-bg); color: var(--o3-text); border-radius: 11px 11px 0 0;
+    }
+    .alert-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 2px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 800; margin-left: 6px;
+    }
+    .alert-pill.red { background: rgba(249, 17, 85, 0.14); color: var(--o3-red); }
+    .alert-pill.amber { background: rgba(217, 119, 6, 0.15); color: var(--o3-amber); }
+
+    .assign-toolbar {
+      padding: 8px 12px; background: var(--o3-surface);
+      border-top: 1px solid var(--o3-border-light); border-bottom: 1px solid var(--o3-border);
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
+    }
+    .assign-select-all {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
+      font-weight: 600; color: var(--o3-text); cursor: pointer; user-select: none;
+    }
+    .assign-select-all input[type="checkbox"], .doc-check-input {
+      width: 15px; height: 15px; accent-color: var(--o3-blue); cursor: pointer; margin: 0;
+    }
+    .assign-controls {
+      display: flex; align-items: center; gap: 6px; flex: 1; min-width: 220px;
+    }
+    .op-picker-wrap {
+      position: relative; flex: 1;
+    }
+    .op-picker-input {
+      width: 100%; padding: 6px 26px 6px 9px; border-radius: 8px;
+      border: 1.5px solid var(--o3-border); background: var(--o3-bg);
+      color: var(--o3-text); font-size: 12px; outline: none; transition: border-color 0.15s;
+    }
+    .op-picker-input:focus {
+      border-color: var(--o3-blue); background: var(--o3-surface);
+    }
+    .op-picker-input.has-selected {
+      border-color: var(--o3-green); font-weight: 600;
+    }
+    .op-picker-clear {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      border: none; background: transparent; color: var(--o3-text-muted);
+      cursor: pointer; font-size: 12px; padding: 2px 4px; display: none;
+    }
+    .op-picker-clear:hover { color: var(--o3-red); }
+    .op-picker-dd {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: var(--o3-surface-elevated); border: 1px solid var(--o3-border);
+      border-radius: 10px; box-shadow: var(--o3-dropdown-shadow);
+      max-height: 220px; overflow-y: auto; z-index: 95; display: none;
+    }
+    .op-picker-dd.open { display: block; }
+    .op-dd-option {
+      padding: 7px 10px; font-size: 12px; color: var(--o3-text); cursor: pointer;
+      border-bottom: 1px solid var(--o3-border-light); display: flex; flex-direction: column; gap: 1px;
+    }
+    .op-dd-option:last-child { border-bottom: none; }
+    .op-dd-option:hover, .op-dd-option.active { background: var(--o3-blue-light); }
+    .op-dd-name { font-weight: 600; color: var(--o3-text); }
+    .op-dd-upn { font-size: 11px; color: var(--o3-text-sec); }
+    .op-dd-empty { padding: 10px; font-size: 11.5px; color: var(--o3-text-sec); text-align: center; }
+
+    .assign-status-line {
+      width: 100%; font-size: 11px; font-weight: 600; color: var(--o3-blue);
+      display: none; align-items: center; justify-content: space-between; padding-top: 2px;
+    }
+    .assign-status-line.visible { display: flex; }
+
+    .alert-body {
+      max-height: 290px; overflow-y: auto; border-radius: 0 0 11px 11px;
+    }
+    .doc-card.selected-doc {
+      background: var(--o3-blue-light);
+    }
+    .btn-single-assign {
+      padding: 2px 7px; font-size: 10.5px; font-weight: 700; border-radius: 6px;
+      border: 1px solid var(--o3-blue); background: var(--o3-blue-light);
+      color: var(--o3-blue); cursor: pointer; transition: 0.12s;
+    }
+    .btn-single-assign:hover {
+      background: var(--o3-blue); color: #fff;
+    }
+
+    .btn {
+      padding: 8px 12px; border: none; border-radius: 10px; cursor: pointer;
+      font-weight: 600; font-size: 12px; transition: all 0.15s ease;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-primary { background: var(--o3-blue); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--o3-blue-hover); }
+    .btn-light { background: var(--o3-blue-light); color: var(--o3-blue); }
+    .btn-light:hover:not(:disabled) { filter: brightness(0.95); }
+    .btn-ghost { background: var(--o3-bg); color: var(--o3-text-sec); border: 1px solid var(--o3-border); }
+    .btn-ghost:hover:not(:disabled) { color: var(--o3-text); border-color: var(--o3-text-muted); }
+
+    .progress-bar {
+      margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--o3-bg);
+      border: 1px solid var(--o3-border-light); font-size: 11.5px; font-weight: 600;
+      color: var(--o3-blue); display: none; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .progress-bar.active { display: flex; }
+
+    .sys-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 2px 4px 8px 4px; font-size: 11px; color: var(--o3-text-muted); flex-wrap: wrap; gap: 8px;
+    }
+    .sys-bar strong { color: var(--o3-text-sec); font-weight: 600; }
+    .link-mini {
+      background: none; border: none; color: var(--o3-blue); font-size: 11px;
+      font-weight: 500; cursor: pointer; padding: 0;
+    }
+    .link-mini:hover { text-decoration: underline; }
+
+    .table-wrap {
+      background: var(--o3-surface); border-radius: 12px; border: 1px solid var(--o3-border-light);
+      box-shadow: var(--o3-shadow); overflow: auto; max-height: calc(100vh - 340px);
+    }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td {
+      border-bottom: 1px solid var(--o3-border-light); border-right: 1px solid var(--o3-border-light);
+      padding: 6px 8px; text-align: center; white-space: nowrap;
+    }
+    th {
+      background: var(--o3-bg); font-weight: 600; color: var(--o3-text-sec);
+      position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--o3-border);
+    }
+    th.sticky-col, td.sticky-col {
+      position: sticky; left: 0; text-align: left; z-index: 1;
+      border-right: 2px solid var(--o3-border);
+      width: var(--first-col-width); min-width: var(--first-col-width); max-width: var(--first-col-width);
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    th.sticky-col { background: var(--o3-bg); z-index: 3; padding-right: 16px; }
+
+    .col-resizer {
+      position: absolute; top: 0; right: 0; width: 7px; height: 100%;
+      cursor: col-resize; user-select: none; z-index: 10;
+      background: transparent; transition: background 0.15s;
+    }
+    .col-resizer:hover, .col-resizer.resizing {
+      background: var(--o3-blue);
+    }
+
+    th.marks-parent-col {
+      background: var(--o3-blue-light); color: var(--o3-blue); cursor: pointer;
+      user-select: none; border-left: 2px solid var(--o3-blue); border-right: 2px solid var(--o3-blue);
+    }
+    td.marks-parent-cell {
+      background: rgba(0, 91, 255, 0.04); border-left: 2px solid var(--o3-border); border-right: 2px solid var(--o3-border);
+    }
+    th.mark-child-col {
+      background: var(--o3-surface); color: var(--o3-text); font-weight: 600; font-size: 11.5px;
+    }
+
+    tr.group-row td {
+      background: var(--o3-group-bg); font-weight: 700; color: var(--o3-text);
+      border-top: 1px solid var(--o3-border); border-bottom: 1px solid var(--o3-border);
+    }
+    tr.group-row td.sticky-col { background: var(--o3-group-bg); cursor: pointer; user-select: none; }
+    tr.group-row td.sticky-col:hover { color: var(--o3-blue); }
+    .grp-badge {
+      margin-left: 5px; font-size: 10.5px; font-weight: 500; color: var(--o3-text-sec);
+      background: var(--o3-border-light); padding: 1px 6px; border-radius: 8px;
+    }
+
+    tr.operator-row td { background: var(--o3-surface); font-weight: 600; }
+    tr.operator-row td.sticky-col {
+      padding-left: 14px; cursor: pointer; user-select: none; background: var(--o3-surface);
+    }
+    tr.operator-row:hover td, tr.operator-row:hover td.sticky-col { background: var(--o3-surface-hover); }
+
+    .op-actions {
+      display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; vertical-align: middle;
+    }
+    .icon-action-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; padding: 0; border-radius: 6px;
+      border: 1px solid var(--o3-border); background: var(--o3-bg);
+      color: var(--o3-text-sec); cursor: pointer; transition: all 0.12s;
+      text-decoration: none; flex-shrink: 0;
+    }
+    .icon-action-btn:hover {
+      border-color: var(--o3-blue); color: var(--o3-blue); background: var(--o3-blue-light);
+      transform: translateY(-1px);
+    }
+    .icon-action-btn.copied {
+      border-color: var(--o3-green); color: var(--o3-green); background: rgba(16, 185, 129, 0.14);
+    }
+
+    .op-status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 7px; border-radius: 10px; font-size: 10.5px; font-weight: 600;
+      background: var(--o3-bg); color: var(--o3-text); margin-left: 5px; vertical-align: middle;
+      border: 1px solid var(--o3-border-light);
+    }
+    .op-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+    }
+    .st-ONLINE .op-status-dot { background: #10B981; }
+    .st-BREAK .op-status-dot { background: #FBBF24; }
+    .st-OFFLINE .op-status-dot { background: #EF4444; }
+    .st-POSTPROCESSING .op-status-dot { background: #6B7280; }
+    .st-TRAINING .op-status-dot { background: #0088FF; }
+    .st-UNKNOWN_STATUS .op-status-dot { background: #CBD5E1; }
+    .op-status-dur { color: var(--o3-text-sec); font-weight: 500; }
+
+    tr.doctype-row td {
+      background: var(--o3-doctype-bg); color: var(--o3-text-sec); font-size: 11.5px;
+    }
+    tr.doctype-row td.sticky-col {
+      padding-left: 32px; font-weight: 400; color: var(--o3-text-sec); background: var(--o3-doctype-bg);
+    }
+    tr.doctype-row:hover td, tr.doctype-row:hover td.sticky-col { background: var(--o3-surface-hover); }
+
+    tr.total-row td {
+      background: var(--o3-bg); font-weight: 700; border-top: 2px solid var(--o3-border);
+      position: sticky; bottom: 0; z-index: 2;
+    }
+    tr.total-row td.sticky-col { background: var(--o3-bg); z-index: 3; }
+
+    .cell-btn {
+      display: inline-block; min-width: 24px; padding: 2px 6px; border-radius: 6px;
+      font-weight: 700; color: var(--o3-blue); background: var(--o3-blue-light); cursor: pointer; transition: 0.12s;
+    }
+    tr.doctype-row .cell-btn {
+      background: var(--o3-border-light); color: var(--o3-text-sec); font-weight: 600;
+    }
+    .cell-btn:hover, tr.doctype-row .cell-btn:hover {
+      background: var(--o3-blue); color: #fff; transform: scale(1.05);
+    }
+    .cell-zero { color: var(--o3-text-muted); opacity: 0.45; user-select: none; }
+
+    .sk-wrap { padding: 14px; display: none; }
+    .sk-line {
+      height: 26px; border-radius: 7px; margin-bottom: 10px;
+      background: linear-gradient(90deg, var(--o3-border-light) 25%, var(--o3-border) 50%, var(--o3-border-light) 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite linear;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    details.log-accordion {
+      margin-top: 12px; background: var(--o3-surface); border-radius: 12px;
+      border: 1px solid var(--o3-border); overflow: hidden;
+    }
+    details.log-accordion.has-error { border-color: var(--o3-red); }
+    details.log-accordion summary {
+      padding: 10px 14px; font-weight: 700; font-size: 12px; color: var(--o3-text-sec);
+      cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;
+      background: var(--o3-bg);
+    }
+    .log-controls { display: flex; gap: 6px; align-items: center; }
+    .log-list {
+      max-height: 210px; overflow-y: auto; padding: 8px 12px;
+      font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; background: #0F172A; color: #E2E8F0;
+    }
+    .log-entry { padding: 4px 0; border-bottom: 1px solid #1E293B; line-height: 1.4; word-break: break-all; }
+    .log-time { color: #64748B; margin-right: 6px; }
+    .log-info { color: #93C5FD; }
+    .log-success { color: #34D399; }
+    .log-warn { color: #FBBF24; }
+    .log-error { color: #FB7185; font-weight: 700; }
+    .log-details { color: #94A3B8; font-size: 10.5px; margin-top: 2px; padding-left: 12px; }
+
+    .drawer {
+      position: fixed; inset: 0; background: var(--o3-surface); z-index: 100;
+      display: none; flex-direction: column; padding: 14px;
+    }
+    .drawer.open { display: flex; }
+    .drawer-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-bottom: 10px; border-bottom: 1px solid var(--o3-border); margin-bottom: 10px; gap: 8px;
+    }
+    .drawer-title { font-weight: 700; font-size: 14px; color: var(--o3-text); }
+    .drawer-sub { font-size: 11.5px; color: var(--o3-text-sec); margin-top: 2px; }
+
+    .activity-card {
+      background: var(--o3-bg); border: 1px solid var(--o3-border); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 10px;
+    }
+    .act-stats-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+      gap: 8px; margin-bottom: 10px;
+    }
+    .act-stat-box {
+      background: var(--o3-surface); border: 1px solid var(--o3-border-light); border-radius: 8px; padding: 6px 10px;
+    }
+    .act-stat-lbl { font-size: 10px; color: var(--o3-text-muted); font-weight: 600; text-transform: uppercase; }
+    .act-stat-val { font-size: 13.5px; font-weight: 800; color: var(--o3-text); margin-top: 2px; }
+
+    .chart-header {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: var(--o3-text-sec); margin-bottom: 6px; font-weight: 600;
+    }
+    .chart-scroll { overflow-x: auto; padding-bottom: 4px; }
+    .chart-bars {
+      display: flex; align-items: flex-end; height: 78px; gap: 2px;
+      min-width: 580px; padding-top: 14px; border-bottom: 1px solid var(--o3-border);
+    }
+    .bar-col {
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+      height: 100%; cursor: pointer; position: relative; border-radius: 3px 3px 0 0;
+    }
+    .bar-col:hover { background: var(--o3-blue-light); }
+    .bar-col.selected { background: var(--o3-blue-light); }
+    .bar-fill {
+      width: 100%; background: var(--o3-blue); border-radius: 2px 2px 0 0;
+      min-height: 2px; transition: height 0.2s ease, background 0.15s;
+    }
+    .bar-col.zero .bar-fill { background: var(--o3-border); height: 2px !important; }
+    .bar-col:hover .bar-fill { background: var(--o3-blue-hover); }
+    .bar-col.selected .bar-fill { background: var(--o3-red); }
+    .bar-val {
+      font-size: 9px; font-weight: 700; color: var(--o3-blue);
+      position: absolute; top: 0; line-height: 1; display: none;
+    }
+    .bar-col:hover .bar-val, .bar-col.peak .bar-val, .bar-col.selected .bar-val { display: block; }
+    .chart-axis {
+      display: flex; justify-content: space-between; min-width: 580px;
+      font-size: 9.5px; color: var(--o3-text-muted); padding-top: 4px;
+    }
+
+    .drawer-list { flex: 1; overflow: auto; border: 1px solid var(--o3-border-light); border-radius: 10px; }
+    .doc-card { padding: 10px 12px; border-bottom: 1px solid var(--o3-border-light); font-size: 12px; }
+    .doc-card:hover { background: var(--o3-surface-hover); }
+    .doc-top { display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin-bottom: 4px; gap: 6px; flex-wrap: wrap; }
+    .doc-top a { color: var(--o3-blue); text-decoration: none; }
+    .doc-top a:hover { text-decoration: underline; }
+    .doc-meta { color: var(--o3-text-sec); font-size: 11.5px; line-height: 1.55; }
+    .mark-pill {
+      display: inline-block; background: var(--o3-blue-light); color: var(--o3-blue);
+      padding: 2px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 600; margin: 3px 4px 0 0;
+    }
+    .dir-badge {
+      display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 600;
+    }
+    .dir-INCOMING { background: rgba(16, 185, 129, 0.14); color: #10B981; }
+    .dir-OUTGOING { background: var(--o3-blue-light); color: var(--o3-blue); }
+  </style>
+</head>
+<body>
+<!-- Баннер автопроверки обновлений с GitHub -->
+  <div id="updateBanner" style="display:none; background:var(--o3-blue); color:#fff; padding:9px 12px; border-radius:10px; margin-bottom:10px; font-size:12px; font-weight:600; justify-content:space-between; align-items:center; gap:8px; box-shadow:var(--o3-shadow);">
+    <span id="updateBannerText">🚀 Доступна новая версия!</span>
+    <div style="display:flex; gap:6px;">
+      <button id="btnApplyUpdate" class="btn" style="background:#fff; color:var(--o3-blue); padding:5px 10px; font-size:11.5px; font-weight:700;">⚡ Перезагрузить расширение</button>
+    </div>
+  </div>
+  <!-- Верхняя панель: переключатель виджетов + переключатель Тёмной/Светлой темы -->
+  <div class="header-row">
+    <div class="widget-switcher" style="margin-bottom:0;">
+      <button id="tabExecutors" class="w-tab active">🛠 Виджет Исполнителей (По закрытию)</button>
+      <button id="tabRegistrars" class="w-tab">📝 Виджет Регистраторов (По созданию)</button>
+    </div>
+    <button id="btnThemeToggle" class="theme-btn" title="Переключить Светлую / Тёмную тему">🌙 Тёмная</button>
+	<button id="btnReloadExt" class="theme-btn" title="Нажмите, чтобы перезагрузить расширение после запуска update.bat">⚡ v—</button>
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- ВИДЖЕТ 1: ДАШБОРД ИСПОЛНИТЕЛЕЙ (ПО ДАТЕ ЗАКРЫТИЯ, СТАТУС = CLOSED)       -->
+  <!-- ======================================================================= -->
+  <div id="widgetExecutors">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-logo">O3</div>
+        <div>
+          <div class="brand-title">СЭД · Дашборд Исполнителей</div>
+          <div class="brand-sub">crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Закрыт</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="as-of-badge">Актуально на: <strong id="exAsOfTime">—</strong></div>
+        <button id="exBtnCsv" class="btn btn-light">📥 CSV</button>
+        <button id="exBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filters-grid">
+        <div class="o3-field accent-date">
+          <div class="o3-field-label">⚡ Дата закрытия (API)</div>
+          <input type="date" id="exDate" class="o3-date-input">
+        </div>
+
+        <div id="exWrapEntity" class="o3-field" data-label="Юрлицо Финтеха"></div>
+        <div id="exWrapHeading" class="o3-field" data-label="Направление"></div>
+        <div id="exWrapDocType" class="o3-field" data-label="Тип документа"></div>
+        <div id="exWrapGroup" class="o3-field" data-label="Группа исполнителей"></div>
+        <div id="exWrapPerson" class="o3-field" data-label="Исполнитель"></div>
+        <div id="exWrapQueue" class="o3-field" data-label="Очередь"></div>
+        <div id="exWrapMark" class="o3-field" data-label="Метка тикета (Marks)"></div>
+
+        <div style="display:flex; gap:6px; align-items:stretch;">
+          <button id="exBtnReload" class="btn btn-primary" style="flex:1;">🔄 Обновить</button>
+          <button id="exBtnReset" class="btn btn-ghost">Сброс</button>
+        </div>
+      </div>
+
+      <div id="exProgressBar" class="progress-bar">
+        <span id="exProgressText">Запрос к API СЭД...</span>
+        <button id="exBtnStop" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">Стоп</button>
+      </div>
+    </div>
+
+    <!-- ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ МАССОВОГО НАЗНАЧЕНИЯ ОПЕРАТОРА -->
+    <div class="alerts-grid">
+      <!-- 1. Просроченные документы -->
+      <details id="accOverdue" class="alert-acc overdue">
+        <summary>
+          <span>🚨 Просроченные документы <span id="badgeOverdueCount" class="alert-pill red">…</span></span>
+          <button id="btnCsvOverdue" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">📥 CSV</button>
+        </summary>
+        <div class="assign-toolbar">
+          <label class="assign-select-all">
+            <input type="checkbox" id="chkAllOverdue">
+            <span>Выбрать все (<span id="selCountOverdue">0</span>)</span>
+          </label>
+          <div class="assign-controls">
+            <div class="op-picker-wrap" id="opWrapOverdue">
+              <input type="text" id="opInputOverdue" class="op-picker-input" placeholder="Поиск оператора по ФИО или email..." autocomplete="off">
+              <button type="button" id="opClearOverdue" class="op-picker-clear" title="Очистить выбор">✕</button>
+              <div id="opDdOverdue" class="op-picker-dd"></div>
+            </div>
+            <button type="button" id="btnAssignOverdue" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled>Назначить</button>
+          </div>
+          <div id="assignStatusOverdue" class="assign-status-line"></div>
+        </div>
+        <div id="listOverdue" class="alert-body">
+          <div style="padding:14px; color:var(--o3-text-sec);">Загрузка просроченных документов из API...</div>
+        </div>
+      </details>
+
+      <!-- 2. Срок истекает сегодня -->
+      <details id="accDueToday" class="alert-acc duetoday">
+        <summary>
+          <span>⏳ Срок истекает сегодня <span id="badgeDueTodayCount" class="alert-pill amber">…</span></span>
+          <button id="btnCsvDueToday" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">📥 CSV</button>
+        </summary>
+        <div class="assign-toolbar">
+          <label class="assign-select-all">
+            <input type="checkbox" id="chkAllDueToday">
+            <span>Выбрать все (<span id="selCountDueToday">0</span>)</span>
+          </label>
+          <div class="assign-controls">
+            <div class="op-picker-wrap" id="opWrapDueToday">
+              <input type="text" id="opInputDueToday" class="op-picker-input" placeholder="Поиск оператора по ФИО или email..." autocomplete="off">
+              <button type="button" id="opClearDueToday" class="op-picker-clear" title="Очистить выбор">✕</button>
+              <div id="opDdDueToday" class="op-picker-dd"></div>
+            </div>
+            <button type="button" id="btnAssignDueToday" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled>Назначить</button>
+          </div>
+          <div id="assignStatusDueToday" class="assign-status-line"></div>
+        </div>
+        <div id="listDueToday" class="alert-body">
+          <div style="padding:14px; color:var(--o3-text-sec);">Загрузка документов со сроком сегодня из API...</div>
+        </div>
+      </details>
+    </div>
+
+    <div class="sys-bar">
+      <div>
+        Дата закрытия: <strong id="exSysDate">—</strong> ·
+        Документов: <strong id="exSysTotal">0</strong> ·
+        Групп: <strong id="exSysGroups">0</strong> ·
+        Исполнителей: <strong id="exSysUsers">0</strong> ·
+        Уникальных меток: <strong id="exSysMarksCount">0</strong>
+      </div>
+      <div>
+        <button class="link-mini" id="exBtnToggleMarksCols">Столбцы меток</button> ·
+        <button class="link-mini" id="exBtnToggleDocTypes">Развернуть/свернуть типы док.</button> ·
+        <button class="link-mini" id="exBtnExpandGroups">Развернуть группы</button> ·
+        <button class="link-mini" id="exBtnCollapseGroups">Свернуть до групп</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div id="exSkeleton" class="sk-wrap">
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+      </div>
+
+      <table id="exTable">
+        <thead></thead>
+        <tbody>
+          <tr><td style="padding:28px; color:var(--o3-text-sec);">Выберите дату закрытия — дашборд автоматически соберет данные из API СЭД!</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ======================================================================= -->
+  <!-- ВИДЖЕТ 2: ОТДЕЛЬНЫЙ ДАШБОРД РЕГИСТРАТОРОВ (ПО ДАТЕ СОЗДАНИЯ)             -->
+  <!-- ======================================================================= -->
+  <div id="widgetRegistrars" style="display:none;">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-logo reg">O3</div>
+        <div>
+          <div class="brand-title">СЭД · Дашборд Регистраторов</div>
+          <div class="brand-sub">crm.bank.ozon.ru · Фильтр по дате создания (регистрации) документа</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="as-of-badge">Актуально на: <strong id="rgAsOfTime">—</strong></div>
+        <button id="rgBtnCsv" class="btn btn-light">📥 CSV</button>
+        <button id="rgBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filters-grid">
+        <div class="o3-field accent-date">
+          <div class="o3-field-label">⚡ Дата создания (API)</div>
+          <input type="date" id="rgDate" class="o3-date-input">
+        </div>
+
+        <div id="rgWrapEntity" class="o3-field" data-label="Юрлицо Финтеха"></div>
+        <div id="rgWrapHeading" class="o3-field" data-label="Направление"></div>
+        <div id="rgWrapDocType" class="o3-field" data-label="Тип документа"></div>
+        <div id="rgWrapGroup" class="o3-field" data-label="Группа регистраторов"></div>
+        <div id="rgWrapPerson" class="o3-field" data-label="Регистратор"></div>
+        <div id="rgWrapQueue" class="o3-field" data-label="Очередь"></div>
+        <div id="rgWrapMark" class="o3-field" data-label="Метка тикета (Marks)"></div>
+
+        <div style="display:flex; gap:6px; align-items:stretch;">
+          <button id="rgBtnReload" class="btn btn-primary" style="flex:1;">🔄 Обновить</button>
+          <button id="rgBtnReset" class="btn btn-ghost">Сброс</button>
+        </div>
+      </div>
+
+      <div id="rgProgressBar" class="progress-bar">
+        <span id="rgProgressText">Запрос к API СЭД...</span>
+        <button id="rgBtnStop" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">Стоп</button>
+      </div>
+    </div>
+
+    <div class="sys-bar">
+      <div>
+        Дата создания: <strong id="rgSysDate">—</strong> ·
+        Документов: <strong id="rgSysTotal">0</strong> ·
+        Групп: <strong id="rgSysGroups">0</strong> ·
+        Регистраторов: <strong id="rgSysUsers">0</strong> ·
+        Уникальных меток: <strong id="rgSysMarksCount">0</strong>
+      </div>
+      <div>
+        <button class="link-mini" id="rgBtnToggleMarksCols">Столбцы меток</button> ·
+        <button class="link-mini" id="rgBtnToggleDocTypes">Развернуть/свернуть типы док.</button> ·
+        <button class="link-mini" id="rgBtnExpandGroups">Развернуть группы</button> ·
+        <button class="link-mini" id="rgBtnCollapseGroups">Свернуть до групп</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div id="rgSkeleton" class="sk-wrap">
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+        <div class="sk-line"></div>
+      </div>
+
+      <table id="rgTable">
+        <thead></thead>
+        <tbody>
+          <tr><td style="padding:28px; color:var(--o3-text-sec);">Выберите дату создания — дашборд соберет все созданные за этот день документы из API СЭД!</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Аккордеон с детальными логами работы и ошибок -->
+  <details id="logAccordion" class="log-accordion">
+    <summary>
+      <span>🐞 Журнал работы и ошибок (<span id="logCount">0</span>)</span>
+      <div class="log-controls">
+        <button id="btnCopyLogs" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">Скопировать логи</button>
+        <button id="btnClearLogs" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">Очистить</button>
+      </div>
+    </summary>
+    <div id="logList" class="log-list"></div>
+  </details>
+
+  <!-- Модальная панель детализации + График активности с 15-минутным шагом -->
+  <div id="drillDrawer" class="drawer">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title" id="drTitle">Детализация документов</div>
+        <div class="drawer-sub" id="drSub"></div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button id="btnDrCsv" class="btn btn-light">📥 Скачать список (CSV)</button>
+        <button id="btnDrClose" class="btn btn-ghost">✕ Закрыть</button>
+      </div>
+    </div>
+
+    <div id="drActivityCard" class="activity-card">
+      <div class="act-stats-row">
+        <div class="act-stat-box">
+          <div class="act-stat-lbl" id="actFirstLbl">Первый документ</div>
+          <div class="act-stat-val" id="actFirstVal">—</div>
+        </div>
+        <div class="act-stat-box">
+          <div class="act-stat-lbl" id="actLastLbl">Последний документ</div>
+          <div class="act-stat-val" id="actLastVal">—</div>
+        </div>
+        <div class="act-stat-box">
+          <div class="act-stat-lbl">Активный диапазон</div>
+          <div class="act-stat-val" id="actSpanVal">—</div>
+        </div>
+        <div class="act-stat-box">
+          <div class="act-stat-lbl">Пик (15 мин)</div>
+          <div class="act-stat-val" id="actPeakVal">—</div>
+        </div>
+      </div>
+
+      <div class="chart-header">
+        <span id="actChartTitle">График активности по 15-минутным интервалам (кликните на столбик для фильтрации списка)</span>
+        <button id="btnClearSlotFilter" class="link-mini" style="display:none; font-weight:700; color:var(--o3-red);">✕ Сбросить фильтр интервала</button>
+      </div>
+      <div class="chart-scroll">
+        <div id="actChartBars" class="chart-bars"></div>
+        <div class="chart-axis">
+          <span>00:00</span>
+          <span>03:00</span>
+          <span>06:00</span>
+          <span>09:00</span>
+          <span>12:00</span>
+          <span>15:00</span>
+          <span>18:00</span>
+          <span>21:00</span>
+          <span>23:45</span>
+        </div>
+      </div>
+    </div>
+
+    <input type="text" id="drSearch" class="o3-dd-search" placeholder="Быстрый поиск по номеру документа, тикету, ФИО, корреспонденту..." style="margin-bottom:8px; padding:8px 10px;">
+    <div id="drList" class="drawer-list"></div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -72,6 +72,11 @@ const CHECK_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><
 const COPY_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="8.5" height="8.5" rx="1.8" fill="currentColor"/><path d="M6 13.2H11.4C12.3941 13.2 13.2 12.3941 13.2 11.4V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 const CHATZONE_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2.5C4.686 2.5 2 4.79 2 7.62C2 9.15 2.785 10.525 4.03 11.46L3.45 13.65L6.03 12.48C6.655 12.65 7.315 12.74 8 12.74C11.314 12.74 14 10.45 14 7.62C14 4.79 11.314 2.5 8 2.5Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/></svg>`;
 
+const STOPWATCH_ICON_SVG = `<svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C9.44772 1 9 1.44772 9 2C9 2.55228 9.44772 3 10 3H14C14.5523 3 15 2.55228 15 2C15 1.44772 14.5523 1 14 1H10Z" fill="currentColor"/><path d="M19.7071 3.29289C19.3166 2.90237 18.6834 2.90237 18.2929 3.29289C17.9024 3.68342 17.9024 4.31658 18.2929 4.70711L19.2929 5.70711C19.6834 6.09763 20.3166 6.09763 20.7071 5.70711C21.0976 5.31658 21.0976 4.68342 20.7071 4.29289L19.7071 3.29289Z" fill="currentColor"/><path d="M12 22C17.5842 22 21 18.5842 21 13C21 7.4158 17.5842 4 12 4C6.4158 4 3 7.4158 3 13C3 18.5842 6.4158 22 12 22ZM15.8 9.6L13.8396 12.2139C13.9428 12.4552 14 12.7209 14 13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13C10 11.8954 10.8954 11 12 11C12.081 11 12.1609 11.0048 12.2394 11.0142L14.2 8.4C14.5314 7.95817 15.1582 7.86863 15.6 8.2C16.0418 8.53137 16.1314 9.15817 15.8 9.6Z" fill="currentColor"/></svg>`;
+const BELL_ICON_SVG = `<svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 4C13 3.44772 12.5523 3 12 3C11.4477 3 11 3.44772 11 4C7.33114 4.3927 6.65279 7.03586 6.1079 9.11821C5.91732 9.84651 5.74307 10.5124 5.46291 11C5.29239 11.2968 5.09424 11.5495 4.89986 11.7975C4.4393 12.3849 4 12.9452 4 14C3.99998 16 6.99107 18 12 18C17.0089 18 20 16 20 14C20 12.9496 19.5524 12.3896 19.085 11.8048C18.885 11.5545 18.6813 11.2997 18.5076 11C18.2223 10.5077 18.0479 9.83368 17.8573 9.09717C17.3196 7.01851 16.6531 4.39152 13 4Z" fill="currentColor"/><path d="M9.30324 19C8.94643 18.9786 8.93152 19.4088 9.13668 19.701C9.68323 20.4796 10.8712 21 12 21C13.1436 21 14.3291 20.4662 14.8711 19.6705C15.0716 19.376 15.0524 18.975 14.6965 19.0003C14.6965 19.0003 13.5134 19.1875 12 19.1875C10.5031 19.1875 9.30324 19 9.30324 19Z" fill="currentColor"/></svg>`;
+const ASSIGN_ICON_SVG = `<svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C9 3 7 5 7 8C7 11 9 13 12 13C15 13 17 11 17 8C17 5 15 3 12 3Z" fill="currentColor"/><path d="M7.50001 14C8.12006 14.002 8.4838 14.1733 8.90908 14.3734C9.51262 14.6576 10.2401 15 12 15C13.7574 15 14.4853 14.6569 15.0883 14.3726C15.5147 14.1716 15.8787 14 16.5 14C17.8675 14 17.7271 15 17 15.1366C15.5359 15.4116 15 16.1699 15 18C15 20.3972 14.5403 20.9555 12.2983 20.9974C12.197 20.9991 12.0947 21 11.9913 21C6.5 21 4 18.5 4 17.5C4 16.5 6.5 13.9967 7.50001 14Z" fill="currentColor"/><path d="M20 17C20 16.4477 19.5523 16 19 16C18.4477 16 18 16.4477 18 17V18H17C16.4477 18 16 18.4477 16 19C16 19.5523 16.4477 20 17 20H18V21C18 21.5523 18.4477 22 19 22C19.5523 22 20 21.5523 20 21V20H21C21.5523 20 22 19.5523 22 19C22 18.4477 21.5523 18 21 18H20V17Z" fill="currentColor"/></svg>`;
+const DOC_ICON_SVG = `<svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12.0063C4 7.32539 4 5.07735 5.12315 3.99769C6.16098 3.00004 8.15971 3.00003 12.0017 3C12.5023 3 13.5006 3 14 3.09991C15.0142 3.3028 15.5 3.5 17.5 5.5C19.5 7.5 19.7028 8.01415 19.9 9C20 9.5 20.0028 11.7514 19.9972 12.2514C19.9473 16.7726 19.9232 18.9573 18.8194 20.0129C17.7873 20.9999 15.8235 21 12 21C8.18547 21 6.15464 20.9999 5.12139 20.0081C4 18.9317 4 16.6871 4 12.0063ZM8 10C8 10.5523 8.44771 11 9 11H15C15.5523 11 16 10.5523 16 10C16 9.44771 15.5523 9 15 9H9C8.44771 9 8 9.44771 8 10ZM9 13C8.44771 13 8 13.4477 8 14C8 14.5523 8.44771 15 9 15H13C13.5523 15 14 14.5523 14 14C14 13.4477 13.5523 13 13 13H9Z" fill="currentColor"/></svg>`;
+
 const INCOMING_ARROW_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M12.5 3.5L3.5 12.5M3.5 12.5H10.5M3.5 12.5V5.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const OUTGOING_ARROW_SVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3.5 12.5L12.5 3.5M12.5 3.5H5.5M12.5 3.5V10.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
@@ -283,7 +288,7 @@ document.addEventListener('mouseover', (e) => {
     const docNum = d.documentName || '';
     return `<div class="aft-row">
       <div class="aft-type">${typeName}<span class="aft-doc">${docNum ? `(${docNum})` : ''}</span></div>
-      <div class="aft-dur">⏱ ${dur}</div>
+      <div class="aft-dur" style="display:inline-flex; align-items:center; gap:3px;">${STOPWATCH_ICON_SVG} ${dur}</div>
     </div>`;
   }).join('');
 
@@ -841,17 +846,19 @@ function updateAssignToolbarState(section) {
   if (btnAssignEl) {
     const canAssign = !st.isAssigning && st.selectedOperator && st.selectedAlertIds.size > 0;
     btnAssignEl.disabled = !canAssign;
-    btnAssignEl.innerText = st.isAssigning
+    const assignLabel = st.isAssigning
       ? 'Назначение...'
       : (st.selectedAlertIds.size > 0 ? `Назначить (${st.selectedAlertIds.size})` : 'Назначить');
+    btnAssignEl.innerHTML = `${ASSIGN_ICON_SVG} <span>${assignLabel}</span>`;
   }
 
   const btnPushEl = document.getElementById(`btnPush${section}`);
   if (btnPushEl) {
     btnPushEl.disabled = st.selectedAlertIds.size === 0;
-    btnPushEl.innerText = st.selectedAlertIds.size > 0
+    const pushLabel = st.selectedAlertIds.size > 0
       ? `Уведомить (${st.selectedAlertIds.size})`
       : 'Уведомить';
+    btnPushEl.innerHTML = `${BELL_ICON_SVG} <span>${pushLabel}</span>`;
   }
 }
 
@@ -878,11 +885,11 @@ function renderDeadlineCardsList(docs, section) {
       <div class="doc-top">
         <div style="display:flex; align-items:center; gap:7px;">
           ${alertId ? `<input type="checkbox" class="doc-check-input" data-doc-check="${section}" data-alert-id="${alertId}" ${isChecked ? 'checked' : ''} title="Выбрать документ">` : ''}
-          <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} ↗</a>
+          <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">${DOC_ICON_SVG}<span>${docTitle} ↗</span></a>
         </div>
         <div class="doc-badges-row">
-          ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">Назначить</button>` : ''}
-          ${alertId ? `<button type="button" class="btn-single-push" data-single-push="${section}" data-alert-id="${alertId}" title="Отправить напоминание по этому документу в Chatzone">Уведомить</button>` : ''}
+          ${alertId ? `<button type="button" class="btn-single-assign" data-single-assign="${section}" data-alert-id="${alertId}" title="Назначить этот документ на выбранного сверху оператора">${ASSIGN_ICON_SVG}</button>` : ''}
+          ${alertId ? `<button type="button" class="btn-single-push" data-single-push="${section}" data-alert-id="${alertId}" title="Отправить напоминание по этому документу в Chatzone">${BELL_ICON_SVG}</button>` : ''}
           ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
           <span class="dir-badge badge-status">${formatTicketStatusRu(t.status)}</span>
@@ -1778,7 +1785,7 @@ function renderWidgetTable(mode) {
       Группа / ${st.roleTitle} / Тип док. (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
-    ${isExec ? `<th class="assigned-col" title="Сколько сейчас документов в статусе В работе (ASSIGNED). Наведите курсор на ячейку для деталей!">В работе (ASSIGNED)</th>` : ''}
+    ${isExec ? `<th class="assigned-col" title="Сколько сейчас документов в статусе В работе (ASSIGNED). Наведите курсор на ячейку для деталей!">В работе</th>` : ''}
     <th>Всего</th>
     <th>Без метки</th>
     <th class="marks-parent-col" data-toggle-marks="${mode}" title="Нажмите, чтобы свернуть или развернуть детализацию по каждой метке">
@@ -2023,7 +2030,7 @@ function renderDrawerList(q) {
 
     return `<div class="doc-card">
       <div class="doc-top">
-        <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">📄 ${docTitle} (Открыть ↗)</a>
+        <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">${DOC_ICON_SVG}<span>${docTitle} (Открыть ↗)</span></a>
         <div class="doc-badges-row">
           ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>

@@ -14,6 +14,7 @@ let logsArray = [];
 let rawOverdueDocs = [];
 let rawDueTodayDocs = [];
 let rawAssignedDocs = [];
+let rawHoldDocs = [];
 let filteredOverdueDocs = [];
 let filteredDueTodayDocs = [];
 let isDeadlinesLoading = false;
@@ -270,7 +271,8 @@ document.addEventListener('mouseover', (e) => {
     return;
   }
   const key = btn.getAttribute('data-assigned-tip');
-  const docs = assignedTooltipStore.get(key);
+  const tip = assignedTooltipStore.get(key);
+  const docs = tip && tip.docs;
   if (!docs || !docs.length) {
     tt.style.display = 'none';
     return;
@@ -281,7 +283,7 @@ document.addEventListener('mouseover', (e) => {
   const maxShow = 18;
   const shown = sorted.slice(0, maxShow);
 
-  let html = `<div class="aft-title">В работе (ASSIGNED): ${docs.length} док. (время с посл. апдейта)</div>`;
+  let html = `<div class="aft-title">${tip.label}: ${docs.length} док. (время с посл. апдейта)</div>`;
   html += shown.map(d => {
     const dur = formatStatusDuration(d.updatedAt || d.createdAt, refNow) || 'только что';
     const typeName = getDocType(d);
@@ -518,12 +520,12 @@ document.getElementById('btnCopyLogs').onclick = (e) => {
 const STATE = {
   executors: {
     prefix: 'ex', mode: 'executors', roleTitle: 'Исполнитель', dateColName: 'Дата_Закрытия',
-    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(),
+    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
     allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
   },
   registrars: {
     prefix: 'rg', mode: 'registrars', roleTitle: 'Регистратор', dateColName: 'Дата_Создания',
-    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(),
+    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
     allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
   }
 };
@@ -1560,6 +1562,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     rawOverdueDocs = msg.payload.overdueDocs || [];
     rawDueTodayDocs = msg.payload.dueTodayDocs || [];
     rawAssignedDocs = msg.payload.assignedDocs || [];
+    rawHoldDocs = msg.payload.onHoldDocs || [];
     populateDropdowns('executors');
     renderWidgetTable('executors');
     return;
@@ -1632,7 +1635,7 @@ function populateDropdowns(mode) {
   const st = STATE[mode];
   const p = st.prefix;
   const entities = new Set(), docTypes = new Set(), groups = new Set(), persons = new Set(), queues = new Set(), marks = new Set();
-  const sourceDocs = mode === 'executors' ? [...st.docs, ...rawOverdueDocs, ...rawDueTodayDocs, ...rawAssignedDocs] : st.docs;
+  const sourceDocs = mode === 'executors' ? [...st.docs, ...rawOverdueDocs, ...rawDueTodayDocs, ...rawAssignedDocs, ...rawHoldDocs] : st.docs;
 
   sourceDocs.forEach(d => {
     entities.add(getLegalEntity(d));
@@ -1661,12 +1664,12 @@ function makeDrillCell(docsArr, title, sub, mode, extraClass = '') {
   return `<td${clsAttr}><span class="cell-btn" title="Нажмите для просмотра графика активности и документов (${cnt} шт.)" data-drill="${key}">${cnt}</span></td>`;
 }
 
-function makeAssignedCell(docsArr, title, sub) {
+function makeAssignedCell(docsArr, title, sub, label = 'В работе (ASSIGNED)') {
   const cnt = docsArr ? docsArr.length : 0;
   if (cnt === 0) return `<td class="cell-zero">0</td>`;
   const key = `as_${++cellSeq}`;
   drillStore.set(key, { docs: docsArr, title, sub, mode: 'executors' });
-  assignedTooltipStore.set(key, docsArr);
+  assignedTooltipStore.set(key, { docs: docsArr, label });
   return `<td><span class="cell-btn assigned-btn" data-drill="${key}" data-assigned-tip="${key}">${cnt}</span></td>`;
 }
 
@@ -1711,6 +1714,7 @@ function renderWidgetTable(mode) {
 
   const filtered = st.docs.filter(matchesActiveFilters);
   const filteredAssigned = isExec ? rawAssignedDocs.filter(matchesActiveFilters) : [];
+  const filteredOnHold = isExec ? rawHoldDocs.filter(matchesActiveFilters) : [];
 
   const marksSet = new Set(), groupsMap = new Map(), uniqueUsers = new Set();
   const grandAssigned = [], grandNoMark = [], grandWithMarks = [], grandByMark = {};
@@ -1723,13 +1727,13 @@ function renderWidgetTable(mode) {
     const docType = getDocType(d);
     uniqueUsers.add(person);
 
-    if (!groupsMap.has(grpName)) groupsMap.set(grpName, { groupName: grpName, assigned: [], all: [], noMark: [], withMarks: [], byMark: {}, users: new Map() });
+    if (!groupsMap.has(grpName)) groupsMap.set(grpName, { groupName: grpName, assigned: [], onHold: [], all: [], noMark: [], withMarks: [], byMark: {}, users: new Map() });
     const g = groupsMap.get(grpName);
-    if (!g.users.has(person)) g.users.set(person, { person, upn, statusInfo, assigned: [], all: [], noMark: [], withMarks: [], byMark: {}, docTypes: new Map() });
+    if (!g.users.has(person)) g.users.set(person, { person, upn, statusInfo, assigned: [], onHold: [], all: [], noMark: [], withMarks: [], byMark: {}, docTypes: new Map() });
     const u = g.users.get(person);
     if (!u.upn && upn) u.upn = upn;
     if ((!u.statusInfo || u.statusInfo.status === 'UNKNOWN_STATUS') && statusInfo.status !== 'UNKNOWN_STATUS') u.statusInfo = statusInfo;
-    if (!u.docTypes.has(docType)) u.docTypes.set(docType, { docType, assigned: [], all: [], noMark: [], withMarks: [], byMark: {} });
+    if (!u.docTypes.has(docType)) u.docTypes.set(docType, { docType, assigned: [], onHold: [], all: [], noMark: [], withMarks: [], byMark: {} });
     return { g, u, dt: u.docTypes.get(docType) };
   }
 
@@ -1768,8 +1772,29 @@ function renderWidgetTable(mode) {
     });
   }
 
+  if (isExec) {
+    filteredOnHold.forEach(d => {
+      const { g, u, dt } = ensureHierarchyNode(d);
+      g.onHold.push(d); u.onHold.push(d); dt.onHold.push(d);
+    });
+  }
+
   const sortedMarks = Array.from(marksSet).sort((a, b) => (grandByMark[b]?.length || 0) - (grandByMark[a]?.length || 0));
-  const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => (b.all.length + b.assigned.length) - (a.all.length + a.assigned.length));
+  const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length) - (a.all.length + a.assigned.length + a.onHold.length));
+  const collectDocTypes = (users) => {
+    const map = new Map();
+    users.forEach(u => u.docTypes.forEach(dt => {
+      if (!map.has(dt.docType)) map.set(dt.docType, { docType: dt.docType, assigned: [], onHold: [], all: [], noMark: [], withMarks: [], byMark: {} });
+      const target = map.get(dt.docType);
+      ['assigned', 'onHold', 'all', 'noMark', 'withMarks'].forEach(key => target[key].push(...(dt[key] || [])));
+      Object.entries(dt.byMark).forEach(([mark, docs]) => {
+        if (!target.byMark[mark]) target.byMark[mark] = [];
+        target.byMark[mark].push(...docs);
+      });
+    }));
+    return Array.from(map.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length) - (a.all.length + a.assigned.length + a.onHold.length));
+  };
+  const grandDocTypes = collectDocTypes(sortedGroups.flatMap(g => Array.from(g.users.values())));
 
   document.getElementById(`${p}SysTotal`).innerText = filtered.length;
   document.getElementById(`${p}SysGroups`).innerText = sortedGroups.length;
@@ -1785,7 +1810,7 @@ function renderWidgetTable(mode) {
       Группа / ${st.roleTitle} / Тип док. (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
-    ${isExec ? `<th class="assigned-col" title="Сколько сейчас документов в статусе В работе (ASSIGNED). Наведите курсор на ячейку для деталей!">В работе</th>` : ''}
+    ${isExec ? `<th class="assigned-col" title="Документы в статусе В работе (ASSIGNED)">В работе</th><th class="assigned-col" title="Документы в статусе На удержании (ON_HOLD)">На удержании</th>` : ''}
     <th>Всего</th>
     <th>Без метки</th>
     <th class="marks-parent-col" data-toggle-marks="${mode}" title="Нажмите, чтобы свернуть или развернуть детализацию по каждой метке">
@@ -1799,12 +1824,14 @@ function renderWidgetTable(mode) {
 
   sortedGroups.forEach(g => {
     const isCol = st.collapsedGroups.has(g.groupName);
-    const sortedUsers = Array.from(g.users.values()).sort((a, b) => (b.all.length || b.assigned.length) - (a.all.length || a.assigned.length));
+    const sortedUsers = Array.from(g.users.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length) - (a.all.length + a.assigned.length + a.onHold.length));
+    const groupDocTypes = collectDocTypes(sortedUsers);
+    const isGroupTypesExpanded = st.expandedGroupDocTypes.has(g.groupName);
 
     const gExp = {
       'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
       [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
-      ...(isExec ? { 'В_Работе_ASSIGNED': g.assigned.length } : {}),
+      ...(isExec ? { 'В_Работе_ASSIGNED': g.assigned.length, 'На_Удержании_ON_HOLD': g.onHold.length } : {}),
       'Всего': g.all.length, 'Без_Метки': g.noMark.length, 'С_Меткой_Всего': g.withMarks.length
     };
     sortedMarks.forEach(m => { gExp[`Метка: ${m}`] = (g.byMark[m] || []).length; });
@@ -1815,19 +1842,35 @@ function renderWidgetTable(mode) {
       : '';
 
     html += `<tr class="group-row">
-      <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span></td>
+      <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span><span data-grp-types="${g.groupName}" title="Раскрыть типы документов группы" style="float:right; cursor:pointer; color:var(--o3-blue);">${isGroupTypesExpanded ? '▼ типы' : '▶ типы'}</span></td>
       ${isExec ? makeAssignedCell(g.assigned, `Группа: ${g.groupName}`, 'Сейчас в работе (ASSIGNED)') : ''}
+      ${isExec ? makeAssignedCell(g.onHold, `Группа: ${g.groupName}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}
       ${makeDrillCell(g.all, `Группа: ${g.groupName}`, `Все документы подразделения за ${dateRu}`, mode)}
       ${makeDrillCell(g.noMark, `Группа: ${g.groupName}`, `Без метки за ${dateRu}`, mode)}
       ${makeDrillCell(g.withMarks, `Группа: ${g.groupName}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
       ${grpMarkCells}
     </tr>`;
 
+    if (!isCol && isGroupTypesExpanded) {
+      groupDocTypes.forEach(dt => {
+        const row = {
+          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+          [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': dt.docType,
+          ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'На_Удержании_ON_HOLD': dt.onHold.length } : {}),
+          'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
+        };
+        sortedMarks.forEach(m => { row[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
+        expRows.push(row);
+        const markCells = st.isMarksExpanded ? sortedMarks.map(m => makeDrillCell(dt.byMark[m] || [], `Группа: ${g.groupName} · ${dt.docType}`, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('') : '';
+        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makeAssignedCell(dt.assigned, `Группа: ${g.groupName} · ${dt.docType}`, 'Сейчас в работе (ASSIGNED)') : ''}${isExec ? makeAssignedCell(dt.onHold, `Группа: ${g.groupName} · ${dt.docType}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}${makeDrillCell(dt.all, `Группа: ${g.groupName} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${makeDrillCell(dt.noMark, `Группа: ${g.groupName} · ${dt.docType}`, `Без метки за ${dateRu}`, mode)}${makeDrillCell(dt.withMarks, `Группа: ${g.groupName} · ${dt.docType}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}${markCells}</tr>`;
+      });
+    }
+
     if (!isCol) {
       sortedUsers.forEach(u => {
         const userKey = `${g.groupName}__${u.person}`;
         const isUserExp = st.expandedUsers.has(userKey);
-        const sortedDocTypes = Array.from(u.docTypes.values()).sort((a, b) => (b.all.length + b.assigned.length) - (a.all.length + a.assigned.length));
+        const sortedDocTypes = Array.from(u.docTypes.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length) - (a.all.length + a.assigned.length + a.onHold.length));
         const statusRender = getPersonStatusRender(u.statusInfo, st.fetchedAt, u.person);
         const actionsHtml = buildPersonActionButtonsHtml(u.upn);
         const assignedDetailsStr = isExec ? u.assigned.map(ad => `${getDocType(ad)} (${formatStatusDuration(ad.updatedAt || ad.createdAt, st.fetchedAt)})`).join(', ') : '';
@@ -1835,7 +1878,7 @@ function renderWidgetTable(mode) {
         const uExp = {
           'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
           [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': '[ВСЕ ТИПЫ СОТРУДНИКА]',
-          ...(isExec ? { 'В_Работе_ASSIGNED': u.assigned.length, 'Детали_В_Работе': assignedDetailsStr } : {}),
+          ...(isExec ? { 'В_Работе_ASSIGNED': u.assigned.length, 'На_Удержании_ON_HOLD': u.onHold.length, 'Детали_В_Работе': assignedDetailsStr } : {}),
           'Всего': u.all.length, 'Без_Метки': u.noMark.length, 'С_Меткой_Всего': u.withMarks.length
         };
         sortedMarks.forEach(m => { uExp[`Метка: ${m}`] = (u.byMark[m] || []).length; });
@@ -1854,6 +1897,7 @@ function renderWidgetTable(mode) {
             <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}
           </td>
           ${isExec ? makeAssignedCell(u.assigned, u.person, `Группа: ${g.groupName} · Сейчас в работе (ASSIGNED)`) : ''}
+          ${isExec ? makeAssignedCell(u.onHold, u.person, `Группа: ${g.groupName} · Сейчас на удержании (ON_HOLD)`, 'На удержании (ON_HOLD)') : ''}
           ${makeDrillCell(u.all, u.person, `Группа: ${g.groupName} · Статус: ${statusRender.text || '—'} · Все документы за ${dateRu}`, mode)}
           ${makeDrillCell(u.noMark, u.person, `Группа: ${g.groupName} · Без метки за ${dateRu}`, mode)}
           ${makeDrillCell(u.withMarks, u.person, `Группа: ${g.groupName} · Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
@@ -1865,7 +1909,7 @@ function renderWidgetTable(mode) {
             const dtExp = {
               'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
               [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': dt.docType,
-              ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'Детали_В_Работе': '' } : {}),
+              ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'На_Удержании_ON_HOLD': dt.onHold.length, 'Детали_В_Работе': '' } : {}),
               'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
             };
             sortedMarks.forEach(m => { dtExp[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
@@ -1878,6 +1922,7 @@ function renderWidgetTable(mode) {
             html += `<tr class="doctype-row">
               <td class="sticky-col" title="Тип документа: ${dt.docType}">↳ ${dt.docType}</td>
               ${isExec ? makeAssignedCell(dt.assigned, `${u.person} · ${dt.docType}`, `Сейчас в работе (ASSIGNED)`) : ''}
+              ${isExec ? makeAssignedCell(dt.onHold, `${u.person} · ${dt.docType}`, `Сейчас на удержании (ON_HOLD)`, 'На удержании (ON_HOLD)') : ''}
               ${makeDrillCell(dt.all, `${u.person} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}
               ${makeDrillCell(dt.noMark, `${u.person} · ${dt.docType}`, `Без метки за ${dateRu}`, mode)}
               ${makeDrillCell(dt.withMarks, `${u.person} · ${dt.docType}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
@@ -1893,7 +1938,7 @@ function renderWidgetTable(mode) {
     const totExp = {
       'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
       [st.roleTitle]: 'ОБЩИЙ ИТОГ', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
-      ...(isExec ? { 'В_Работе_ASSIGNED': grandAssigned.length, 'Детали_В_Работе': '' } : {}),
+      ...(isExec ? { 'В_Работе_ASSIGNED': grandAssigned.length, 'На_Удержании_ON_HOLD': filteredOnHold.length, 'Детали_В_Работе': '' } : {}),
       'Всего': filtered.length, 'Без_Метки': grandNoMark.length, 'С_Меткой_Всего': grandWithMarks.length
     };
     sortedMarks.forEach(m => { totExp[`Метка: ${m}`] = (grandByMark[m] || []).length; });
@@ -1904,15 +1949,31 @@ function renderWidgetTable(mode) {
       : '';
 
     html += `<tr class="total-row">
-      <td class="sticky-col">ИТОГО ЗА ${dateRu}</td>
+      <td class="sticky-col" data-total-types title="Нажмите, чтобы раскрыть типы документов общего итога">ИТОГО ЗА ${dateRu} <span style="float:right; cursor:pointer; color:var(--o3-blue);">${st.totalDocTypesExpanded ? '▼ типы' : '▶ типы'}</span></td>
       ${isExec ? makeAssignedCell(grandAssigned, 'Все подразделения', 'Всего сейчас в работе (ASSIGNED)') : ''}
+      ${isExec ? makeAssignedCell(filteredOnHold, 'Все подразделения', 'Всего сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}
       ${makeDrillCell(filtered, `Все подразделения за ${dateRu}`, 'Общий итог за день', mode)}
       ${makeDrillCell(grandNoMark, `Без метки за ${dateRu}`, 'Общий итог за день', mode)}
       ${makeDrillCell(grandWithMarks, `Все с метками за ${dateRu}`, 'Общий итог за день', mode, 'marks-parent-cell')}
       ${totMarkCells}
     </tr>`;
+
+    if (st.totalDocTypesExpanded) {
+      grandDocTypes.forEach(dt => {
+        const row = {
+          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
+          [st.roleTitle]: 'ОБЩИЙ ИТОГ', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': dt.docType,
+          ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'На_Удержании_ON_HOLD': dt.onHold.length } : {}),
+          'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
+        };
+        sortedMarks.forEach(m => { row[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
+        expRows.push(row);
+        const markCells = st.isMarksExpanded ? sortedMarks.map(m => makeDrillCell(dt.byMark[m] || [], `Общий итог · ${dt.docType}`, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('') : '';
+        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makeAssignedCell(dt.assigned, `Все подразделения · ${dt.docType}`, 'Сейчас в работе (ASSIGNED)') : ''}${isExec ? makeAssignedCell(dt.onHold, `Все подразделения · ${dt.docType}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}${makeDrillCell(dt.all, `Общий итог · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${makeDrillCell(dt.noMark, `Общий итог · ${dt.docType}`, `Без метки за ${dateRu}`, mode)}${makeDrillCell(dt.withMarks, `Общий итог · ${dt.docType}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}${markCells}</tr>`;
+      });
+    }
   } else {
-    const colSpan = (isExec ? 5 : 4) + (st.isMarksExpanded ? sortedMarks.length : 0);
+    const colSpan = (isExec ? 6 : 4) + (st.isMarksExpanded ? sortedMarks.length : 0);
     html = `<tr><td colspan="${colSpan}" style="padding:28px; color:var(--o3-text-sec);">За ${dateRu} документов по выбранным фильтрам не найдено.</td></tr>`;
   }
 
@@ -2084,6 +2145,21 @@ function bindWidgetEvents(mode) {
       renderWidgetTable(mode);
       return;
     }
+    const grpTypes = e.target.closest('[data-grp-types]');
+    if (grpTypes) {
+      e.stopPropagation();
+      const gName = grpTypes.getAttribute('data-grp-types');
+      if (st.expandedGroupDocTypes.has(gName)) st.expandedGroupDocTypes.delete(gName);
+      else st.expandedGroupDocTypes.add(gName);
+      renderWidgetTable(mode);
+      return;
+    }
+    const totalTypes = e.target.closest('[data-total-types]');
+    if (totalTypes) {
+      st.totalDocTypesExpanded = !st.totalDocTypesExpanded;
+      renderWidgetTable(mode);
+      return;
+    }
     const grp = e.target.closest('[data-grp]');
     if (grp) {
       const gName = grp.getAttribute('data-grp');
@@ -2111,10 +2187,15 @@ function bindWidgetEvents(mode) {
 
   document.getElementById(`${p}BtnToggleDocTypes`).onclick = () => {
     st.allUsersExpanded = !st.allUsersExpanded;
+    st.totalDocTypesExpanded = st.allUsersExpanded;
     if (st.allUsersExpanded) {
-      const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs] : st.docs;
+      const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs] : st.docs;
       allSource.forEach(d => st.expandedUsers.add(`${getGroupByMode(d, mode)}__${getPersonByMode(d, mode)}`));
-    } else st.expandedUsers.clear();
+      allSource.forEach(d => st.expandedGroupDocTypes.add(getGroupByMode(d, mode)));
+    } else {
+      st.expandedUsers.clear();
+      st.expandedGroupDocTypes.clear();
+    }
     renderWidgetTable(mode);
   };
 
@@ -2138,7 +2219,7 @@ function bindWidgetEvents(mode) {
     renderWidgetTable(mode);
   };
   document.getElementById(`${p}BtnCollapseGroups`).onclick = () => {
-    const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs] : st.docs;
+    const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs] : st.docs;
     allSource.forEach(d => st.collapsedGroups.add(getGroupByMode(d, mode)));
     renderWidgetTable(mode);
   };

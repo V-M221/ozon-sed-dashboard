@@ -528,15 +528,22 @@
         documentCreatedTo: "2027-12-31T23:59:59+03:00"
       };
 
-      sendLog('info', `Запрос дедлайнов (на ${targetDueYMD}) и документов в работе (ASSIGNED)...`);
+      const onHoldFilter = {
+        statusIn: ["ON_HOLD"],
+        documentCreatedFrom: "2026-01-01T00:00:00+03:00",
+        documentCreatedTo: "2027-12-31T23:59:59+03:00"
+      };
 
-      const [overdueDocs, dueTodayDocs, assignedDocs] = await Promise.all([
+      sendLog('info', `Запрос дедлайнов (на ${targetDueYMD}), документов в работе и на удержании...`);
+
+      const [overdueDocs, dueTodayDocs, assignedDocs, onHoldDocs] = await Promise.all([
         fetchAllByFilter(overdueFilter),
         fetchAllByFilter(dueTodayFilter),
-        fetchAllByFilter(assignedFilter)
+        fetchAllByFilter(assignedFilter),
+        fetchAllByFilter(onHoldFilter)
       ]);
 
-      sendLog('success', `Доп. данные загружены: В работе (ASSIGNED) = ${assignedDocs.length} шт., Просрочено = ${overdueDocs.length} шт., Истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
+      sendLog('success', `Доп. данные загружены: В работе = ${assignedDocs.length} шт., На удержании = ${onHoldDocs.length} шт., Просрочено = ${overdueDocs.length} шт., Истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
 
       window.postMessage({
         source: 'CRM_INJECTOR',
@@ -546,7 +553,8 @@
           yesterdayYMD,
           overdueDocs,
           dueTodayDocs,
-          assignedDocs
+          assignedDocs,
+          onHoldDocs
         }
       }, '*');
     } catch (e) {

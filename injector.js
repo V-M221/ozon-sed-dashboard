@@ -8,7 +8,6 @@
   const GROUP_API_URL = "https://crm.bank.ozon.ru/api/operatorsGroups.json";
   const STATUS_HISTORY_URL = "https://crm.bank.ozon.ru/api/operatorStatusHistory.json";
   const INTERNAL_REQUESTS_URL = "https://crm.bank.ozon.ru/api/alertsStatistic.json";
-  const INTERNAL_REQUEST_ALERT_TYPE_ID = 2916;
   const HEARTBEAT_URL = "https://crm.bank.ozon.ru/api/heartBeat.json";
   const CONCURRENCY_LIMIT = 20;
 
@@ -341,17 +340,8 @@
     return allDocs;
   }
 
-  async function fetchClosedInternalRequestsByDate(targetDateYMD) {
-    const filter = {
-      alertStatusIn: ['CLOSED'],
-      createdFrom: '2026-01-01T00:00:00+03:00',
-      createdTo: '2027-12-31T23:59:59+03:00',
-      closedAtFrom: `${targetDateYMD}T00:00:00+03:00`,
-      closedAtTo: `${targetDateYMD}T23:59:59+03:00`,
-      alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID
-    };
-    logRequestFilter('Запрос закрытых внутренних запросов', filter);
-
+  async function fetchInternalRequestsByFilter(filter, label) {
+    logRequestFilter(label, filter);
     const perPage = 100;
     const allItems = [];
     let page = 1;
@@ -371,7 +361,10 @@
       if (!res.ok) throw new Error(`alertsStatistic.json вернул HTTP ${res.status}`);
       const data = await res.json();
       const items = Array.isArray(data.items) ? data.items : [];
-      allItems.push(...items.filter(item => item.status === 'CLOSED' && item.origin === 'CHANNEL_INTERNAL_REQUEST'));
+      allItems.push(...items.filter(item =>
+        item.origin === 'CHANNEL_INTERNAL_REQUEST' &&
+        (!Array.isArray(filter.alertStatusIn) || filter.alertStatusIn.includes(item.status))
+      ));
       totalPages = Number(data.pageInfo && data.pageInfo.totalPages) || (items.length === perPage ? page + 1 : page);
       page++;
       if (items.length === 0) break;
@@ -398,6 +391,8 @@
         documentName: '',
         isInternalRequest: true,
         internalRequestId: String(item.id || ''),
+        alertType: item.alertType || null,
+        alertTypeName: item.alertTypeName || '',
         internalRequestClosedAt: item.closedAt || null,
         createdAt: item.createdAt || null,
         updatedAt: item.closedAt || item.statusUpdatedAt || null,
@@ -410,11 +405,33 @@
           queue: item.queue || null,
           origin: item.origin || '',
           firstOrigin: item.firstOrigin || '',
+          alertType: item.alertType || null,
+          alertTypeName: item.alertTypeName || '',
           marks: Array.isArray(item.marks) ? item.marks : []
         },
         ticketMarks: []
       };
     });
+  }
+
+  async function fetchClosedInternalRequestsByDate(targetDateYMD) {
+    const filter = {
+      alertStatusIn: ['CLOSED'],
+      createdFrom: '2026-01-01T00:00:00+03:00',
+      createdTo: '2027-12-31T23:59:59+03:00',
+      closedAtFrom: `${targetDateYMD}T00:00:00+03:00`,
+      closedAtTo: `${targetDateYMD}T23:59:59+03:00`
+    };
+    return fetchInternalRequestsByFilter(filter, 'Запрос закрытых внутренних запросов');
+  }
+
+  async function fetchActiveInternalRequests() {
+    const filter = {
+      alertStatusIn: ['ASSIGNED', 'ON_HOLD'],
+      createdFrom: '2026-01-01T00:00:00+03:00',
+      createdTo: '2027-12-31T23:59:59+03:00'
+    };
+    return fetchInternalRequestsByFilter(filter, 'Запрос внутренних запросов в работе и на удержании');
   }
 
   // === ПОИСК ОПЕРАТОРОВ СЭД (POST /apps/sed/api/operators) ===
@@ -628,7 +645,7 @@
 
       sendLog('info', `Запрос дедлайнов (на ${targetDueYMD}), документов в работе, на удержании и закрытых внутренних запросов (на ${targetClosedYMD})...`);
 
-      const [overdueDocs, dueTodayDocs, assignedDocs, onHoldDocs, closedInternalRequests] = await Promise.all([
+      const [overdueDocs, dueTodayDocs, assignedDocs, onHoldDocs, closedInternalRequests, activeInternalRequests] = await Promise.all([
         fetchAllByFilter(overdueFilter),
         fetchAllByFilter(dueTodayFilter),
         fetchAllByFilter(assignedFilter),
@@ -636,10 +653,16 @@
         fetchClosedInternalRequestsByDate(targetClosedYMD).catch(e => {
           sendLog('error', `Не удалось загрузить закрытые внутренние запросы: ${e.message}`);
           return [];
+        }),
+        fetchActiveInternalRequests().catch(e => {
+          sendLog('error', `Не удалось загрузить активные внутренние запросы: ${e.message}`);
+          return [];
         })
       ]);
 
-      sendLog('success', `Доп. данные загружены: В работе = ${assignedDocs.length} шт., На удержании = ${onHoldDocs.length} шт., Внутренние запросы закрыты = ${closedInternalRequests.length} шт., Просрочено = ${overdueDocs.length} шт., Истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
+      const internalRequestsInWork = activeInternalRequests.filter(item => item.ticket.status === 'ASSIGNED');
+      const internalRequestsOnHold = activeInternalRequests.filter(item => item.ticket.status === 'ON_HOLD');
+      sendLog('success', `Доп. данные загружены: Документы в работе = ${assignedDocs.length} шт., внутренние запросы в работе = ${internalRequestsInWork.length} шт.; документы на удержании = ${onHoldDocs.length} шт., внутренние запросы на удержании = ${internalRequestsOnHold.length} шт.; закрытые внутренние запросы = ${closedInternalRequests.length} шт.; просрочено = ${overdueDocs.length} шт., истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
 
       window.postMessage({
         source: 'CRM_INJECTOR',
@@ -651,7 +674,9 @@
           dueTodayDocs,
           assignedDocs,
           onHoldDocs,
-          closedInternalRequests
+          closedInternalRequests,
+          internalRequestsInWork,
+          internalRequestsOnHold
         }
       }, '*');
     } catch (e) {

@@ -16,6 +16,8 @@ let rawDueTodayDocs = [];
 let rawAssignedDocs = [];
 let rawHoldDocs = [];
 let rawClosedInternalRequestDocs = [];
+let rawInternalRequestsInWork = [];
+let rawInternalRequestsOnHold = [];
 let filteredOverdueDocs = [];
 let filteredDueTodayDocs = [];
 let isDeadlinesLoading = false;
@@ -58,6 +60,12 @@ const TICKET_STATUS_MAP = {
 function formatTicketStatusRu(rawStatus) {
   if (!rawStatus) return '—';
   return TICKET_STATUS_MAP[rawStatus] || rawStatus;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
 }
 
 function formatOperatorHtml(d, includeGroup = true) {
@@ -284,13 +292,14 @@ document.addEventListener('mouseover', (e) => {
   const maxShow = 18;
   const shown = sorted.slice(0, maxShow);
 
-  let html = `<div class="aft-title">${tip.label}: ${docs.length} док. (время с посл. апдейта)</div>`;
+  const itemLabel = docs.some(d => d.isInternalRequest) ? 'элем.' : 'док.';
+  let html = `<div class="aft-title">${tip.label}: ${docs.length} ${itemLabel} (время с посл. апдейта)</div>`;
   html += shown.map(d => {
     const dur = formatStatusDuration(d.updatedAt || d.createdAt, refNow) || 'только что';
-    const typeName = getDocType(d);
-    const docNum = d.documentName || '';
+    const typeName = d.isInternalRequest ? `Внутренний запрос · ${getInternalRequestCategory(d)}` : getDocType(d);
+    const docNum = d.isInternalRequest ? d.internalRequestId : d.documentName || '';
     return `<div class="aft-row">
-      <div class="aft-type">${typeName}<span class="aft-doc">${docNum ? `(${docNum})` : ''}</span></div>
+      <div class="aft-type">${escapeHtml(typeName)}<span class="aft-doc">${docNum ? `(${escapeHtml(docNum)})` : ''}</span></div>
       <div class="aft-dur" style="display:inline-flex; align-items:center; gap:3px;">${STOPWATCH_ICON_SVG} ${dur}</div>
     </div>`;
   }).join('');
@@ -522,11 +531,13 @@ const STATE = {
   executors: {
     prefix: 'ex', mode: 'executors', roleTitle: 'Исполнитель', dateColName: 'Дата_Закрытия',
     docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
+    expandedGroupRequestCategories: new Set(), expandedUserRequestCategories: new Set(), totalRequestCategoriesExpanded: false,
     allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
   },
   registrars: {
     prefix: 'rg', mode: 'registrars', roleTitle: 'Регистратор', dateColName: 'Дата_Создания',
     docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
+    expandedGroupRequestCategories: new Set(), expandedUserRequestCategories: new Set(), totalRequestCategoriesExpanded: false,
     allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
   }
 };
@@ -653,6 +664,14 @@ function getOrigin(d) {
   const t = d && d.ticket || {};
   const value = d && (d.origin || d.firstOrigin) || t.origin || t.firstOrigin || '';
   return String(value || 'Не указано');
+}
+function getInternalRequestCategory(d) {
+  const alertType = (d && (d.alertType || (d.ticket && d.ticket.alertType))) || null;
+  if (typeof alertType === 'string') return alertType || 'Не указана';
+  if (alertType && typeof alertType === 'object') {
+    return String(alertType.name || alertType.title || alertType.label || alertType.code || alertType.id || 'Не указана');
+  }
+  return String((d && d.alertTypeName) || (d && d.ticket && d.ticket.alertTypeName) || 'Не указана');
 }
 function getPersonByMode(d, mode) { return mode === 'registrars' ? getCreatorLabel(d) : getOperatorLabel(d); }
 function getPersonUpnByMode(d, mode) { return mode === 'registrars' ? getCreatorUpn(d) : getOperatorUpn(d); }
@@ -1598,6 +1617,8 @@ chrome.runtime.onMessage.addListener((msg) => {
     rawAssignedDocs = msg.payload.assignedDocs || [];
     rawHoldDocs = msg.payload.onHoldDocs || [];
     rawClosedInternalRequestDocs = msg.payload.closedInternalRequests || [];
+    rawInternalRequestsInWork = msg.payload.internalRequestsInWork || [];
+    rawInternalRequestsOnHold = msg.payload.internalRequestsOnHold || [];
     populateDeadlineFilterOptions();
     populateDropdowns('executors');
     renderWidgetTable('executors');
@@ -1673,7 +1694,7 @@ function populateDropdowns(mode) {
   const p = st.prefix;
   const entities = new Set(), docTypes = new Set(), groups = new Set(), persons = new Set(), queues = new Set(), origins = new Set(), marks = new Set();
   const documentSourceDocs = mode === 'executors' ? [...st.docs, ...rawOverdueDocs, ...rawDueTodayDocs, ...rawAssignedDocs, ...rawHoldDocs] : st.docs;
-  const sourceDocs = mode === 'executors' ? [...documentSourceDocs, ...rawClosedInternalRequestDocs] : st.docs;
+  const sourceDocs = mode === 'executors' ? [...documentSourceDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
 
   documentSourceDocs.forEach(d => {
     entities.add(getLegalEntity(d));
@@ -1715,11 +1736,14 @@ function makeAssignedCell(docsArr, title, sub, label = 'В работе (ASSIGNE
   return `<td><span class="cell-btn assigned-btn" data-drill="${key}" data-assigned-tip="${key}">${cnt}</span></td>`;
 }
 
-function makeInternalRequestCell(count) {
-  const cnt = Number(count) || 0;
+function makeInternalRequestCell(docs, expansionKey = '', expanded = false, dateRu = '') {
+  const requestDocs = Array.isArray(docs) ? docs : [];
+  const cnt = requestDocs.filter(d => d.ticket && d.ticket.status === 'CLOSED').length;
+  const canExpand = requestDocs.length > 0 && expansionKey;
+  const toggle = canExpand ? `<button class="request-category-toggle" data-request-categories="${expansionKey}" title="Раскрыть по категории (типу внутреннего запроса)">${expanded ? '▾' : '▸'}</button>` : '';
   return cnt > 0
-    ? `<td class="internal-request-cell" title="Закрытые внутренние запросы за выбранную дату">${cnt}</td>`
-    : '<td class="cell-zero internal-request-cell">0</td>';
+    ? `<td class="internal-request-cell" title="Закрытые внутренние запросы за ${dateRu}"><span>${cnt}</span>${toggle}</td>`
+    : `<td class="cell-zero internal-request-cell" title="Закрытые внутренние запросы за ${dateRu}">0${toggle}</td>`;
 }
 
 function renderWidgetTable(mode) {
@@ -1770,12 +1794,14 @@ function renderWidgetTable(mode) {
   const internalRequestPeople = getMultiSelectValues(`${p}WrapPerson`);
   const internalRequestQueues = getMultiSelectValues(`${p}WrapQueue`);
   const internalRequestOrigins = getMultiSelectValues(`${p}WrapOrigin`);
-  const filteredInternalRequests = isExec ? rawClosedInternalRequestDocs.filter(d =>
+  const matchesInternalRequestFilters = (d) =>
     (internalRequestGroups.size === 0 || internalRequestGroups.has(getOperatorGroup(d))) &&
     (internalRequestPeople.size === 0 || internalRequestPeople.has(getOperatorLabel(d))) &&
     (internalRequestQueues.size === 0 || internalRequestQueues.has(getQueueName(d))) &&
-    (internalRequestOrigins.size === 0 || internalRequestOrigins.has(getOrigin(d)))
-  ) : [];
+    (internalRequestOrigins.size === 0 || internalRequestOrigins.has(getOrigin(d)));
+  const filteredInternalRequests = isExec ? rawClosedInternalRequestDocs.filter(matchesInternalRequestFilters) : [];
+  const filteredInternalRequestsInWork = isExec ? rawInternalRequestsInWork.filter(matchesInternalRequestFilters) : [];
+  const filteredInternalRequestsOnHold = isExec ? rawInternalRequestsOnHold.filter(matchesInternalRequestFilters) : [];
 
   const marksSet = new Set(), groupsMap = new Map(), uniqueUsers = new Set();
   const grandAssigned = [], grandNoMark = [], grandWithMarks = [], grandByMark = {};
@@ -1788,9 +1814,9 @@ function renderWidgetTable(mode) {
     const docType = getDocType(d);
     uniqueUsers.add(person);
 
-    if (!groupsMap.has(grpName)) groupsMap.set(grpName, { groupName: grpName, assigned: [], onHold: [], internalRequests: [], all: [], noMark: [], withMarks: [], byMark: {}, users: new Map() });
+    if (!groupsMap.has(grpName)) groupsMap.set(grpName, { groupName: grpName, assigned: [], onHold: [], internalRequests: [], internalRequestsInWork: [], internalRequestsOnHold: [], all: [], noMark: [], withMarks: [], byMark: {}, users: new Map() });
     const g = groupsMap.get(grpName);
-    if (!g.users.has(person)) g.users.set(person, { person, upn, statusInfo, assigned: [], onHold: [], internalRequests: [], all: [], noMark: [], withMarks: [], byMark: {}, docTypes: new Map() });
+    if (!g.users.has(person)) g.users.set(person, { person, upn, statusInfo, assigned: [], onHold: [], internalRequests: [], internalRequestsInWork: [], internalRequestsOnHold: [], all: [], noMark: [], withMarks: [], byMark: {}, docTypes: new Map() });
     const u = g.users.get(person);
     if (!u.upn && upn) u.upn = upn;
     if ((!u.statusInfo || u.statusInfo.status === 'UNKNOWN_STATUS') && statusInfo.status !== 'UNKNOWN_STATUS') u.statusInfo = statusInfo;
@@ -1844,10 +1870,23 @@ function renderWidgetTable(mode) {
       g.internalRequests.push(d);
       u.internalRequests.push(d);
     });
+    filteredInternalRequestsInWork.forEach(d => {
+      const { g, u } = ensureHierarchyNode(d);
+      g.internalRequestsInWork.push(d);
+      u.internalRequestsInWork.push(d);
+    });
+    filteredInternalRequestsOnHold.forEach(d => {
+      const { g, u } = ensureHierarchyNode(d);
+      g.internalRequestsOnHold.push(d);
+      u.internalRequestsOnHold.push(d);
+    });
   }
 
   const sortedMarks = Array.from(marksSet).sort((a, b) => (grandByMark[b]?.length || 0) - (grandByMark[a]?.length || 0));
-  const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length + b.internalRequests.length) - (a.all.length + a.assigned.length + a.onHold.length + a.internalRequests.length));
+  const sortedGroups = Array.from(groupsMap.values()).sort((a, b) =>
+    (b.all.length + b.assigned.length + b.onHold.length + b.internalRequests.length + b.internalRequestsInWork.length + b.internalRequestsOnHold.length) -
+    (a.all.length + a.assigned.length + a.onHold.length + a.internalRequests.length + a.internalRequestsInWork.length + a.internalRequestsOnHold.length)
+  );
   const collectDocTypes = (users) => {
     const map = new Map();
     users.forEach(u => u.docTypes.forEach(dt => {
@@ -1877,29 +1916,78 @@ function renderWidgetTable(mode) {
       Группа / ${st.roleTitle} / Тип док. (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
-    ${isExec ? `<th class="assigned-col" title="Документы в статусе В работе (ASSIGNED)">В работе</th><th class="assigned-col" title="Документы в статусе На удержании (ON_HOLD)">На удержании</th>` : ''}
-    ${isExec ? `<th class="internal-request-col" title="Закрытые внутренние запросы за выбранную дату">Внутренние запросы</th>` : ''}
-    <th>Всего</th>
-    <th>Без метки</th>
+    ${isExec ? `<th class="assigned-col" title="Документы и внутренние запросы со статусом В работе на текущий момент">В работе<br><small>на сейчас</small></th><th class="assigned-col" title="Документы и внутренние запросы со статусом На удержании на текущий момент">На удержании<br><small>на сейчас</small></th>` : ''}
+    ${isExec ? `<th class="internal-request-col" title="Закрытые внутренние запросы за ${dateRu}">Внутренние запросы<br><small>за ${dateRu}</small></th>` : ''}
+    <th title="Всего документов за ${dateRu}">Всего документов<br><small>за ${dateRu}</small></th>
+    <th title="В том числе: документы без метки">В том числе<br>без метки</th>
     <th class="marks-parent-col" data-toggle-marks="${mode}" title="Нажмите, чтобы свернуть или развернуть детализацию по каждой метке">
-      С меткой <span style="font-size:10.5px; font-weight:500;">${markToggleIcon}</span>
+      В том числе: с метками <span style="font-size:10.5px; font-weight:500;">${markToggleIcon}</span>
     </th>
-    ${st.isMarksExpanded ? sortedMarks.map(m => `<th class="mark-child-col" title="Метка: ${m}">${m}</th>`).join('') : ''}
+    ${st.isMarksExpanded ? sortedMarks.map(m => `<th class="mark-child-col" title="В том числе документы с меткой: ${m}">В том числе<br>${m}</th>`).join('') : ''}
   </tr>`;
 
   const expRows = [];
   let html = '';
 
+  function renderInternalRequestCategoryRows(requestDocs, contextLabel) {
+    const categories = new Map();
+    (requestDocs || []).forEach(d => {
+      const category = getInternalRequestCategory(d);
+      if (!categories.has(category)) categories.set(category, { closed: [], assigned: [], onHold: [] });
+      const entry = categories.get(category);
+      const status = d.ticket && d.ticket.status;
+      if (status === 'CLOSED') entry.closed.push(d);
+      else if (status === 'ASSIGNED') entry.assigned.push(d);
+      else if (status === 'ON_HOLD') entry.onHold.push(d);
+    });
+    const sortedCategories = Array.from(categories.entries()).sort((a, b) =>
+      (b[1].closed.length + b[1].assigned.length + b[1].onHold.length) -
+      (a[1].closed.length + a[1].assigned.length + a[1].onHold.length)
+    );
+    return sortedCategories.map(([category, counts]) => {
+      expRows.push({
+        'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu,
+        'Группа': contextLabel, [st.roleTitle]: '[КАТЕГОРИЯ ВНУТРЕННЕГО ЗАПРОСА]',
+        'Тип_Документа': category,
+        'Категория_Внутреннего_Запроса': category,
+        ...(isExec ? {
+          'В_Работе_ASSIGNED': counts.assigned.length,
+          'На_Удержании_ON_HOLD': counts.onHold.length,
+          'Внутренние_Запросы_Закрыто': counts.closed.length
+        } : {}),
+        'Всего': 0, 'Без_Метки': 0, 'С_Меткой_Всего': 0
+      });
+      return `<tr class="request-category-row">
+        <td class="sticky-col">↳ Категория: ${escapeHtml(category)}</td>
+        ${isExec ? makeAssignedCell(counts.assigned, category, `${contextLabel} · Внутренние запросы в работе сейчас`, 'Внутренние запросы в работе (на сейчас)') : ''}
+        ${isExec ? makeAssignedCell(counts.onHold, category, `${contextLabel} · Внутренние запросы на удержании сейчас`, 'Внутренние запросы на удержании (на сейчас)') : ''}
+        ${isExec ? makeInternalRequestCell(counts.closed, '', false, dateRu) : ''}
+        <td class="cell-zero">0</td><td class="cell-zero">0</td><td class="cell-zero">0</td>
+        ${st.isMarksExpanded ? sortedMarks.map(() => '<td class="cell-zero">0</td>').join('') : ''}
+      </tr>`;
+    }).join('');
+  }
+
+  const allInternalRequests = [...filteredInternalRequests, ...filteredInternalRequestsInWork, ...filteredInternalRequestsOnHold];
+
   sortedGroups.forEach(g => {
     const isCol = st.collapsedGroups.has(g.groupName);
-    const sortedUsers = Array.from(g.users.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length + b.internalRequests.length) - (a.all.length + a.assigned.length + a.onHold.length + a.internalRequests.length));
+    const sortedUsers = Array.from(g.users.values()).sort((a, b) =>
+      (b.all.length + b.assigned.length + b.onHold.length + b.internalRequests.length + b.internalRequestsInWork.length + b.internalRequestsOnHold.length) -
+      (a.all.length + a.assigned.length + a.onHold.length + a.internalRequests.length + a.internalRequestsInWork.length + a.internalRequestsOnHold.length)
+    );
     const groupDocTypes = collectDocTypes(sortedUsers);
     const isGroupTypesExpanded = st.expandedGroupDocTypes.has(g.groupName);
+    const groupRequestKey = `group:${encodeURIComponent(g.groupName)}`;
+    const isGroupRequestsExpanded = st.expandedGroupRequestCategories.has(groupRequestKey);
+    const groupRequests = [...g.internalRequests, ...g.internalRequestsInWork, ...g.internalRequestsOnHold];
+    const groupAssignedAll = [...g.assigned, ...g.internalRequestsInWork];
+    const groupOnHoldAll = [...g.onHold, ...g.internalRequestsOnHold];
 
     const gExp = {
       'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
       [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
-      ...(isExec ? { 'В_Работе_ASSIGNED': g.assigned.length, 'На_Удержании_ON_HOLD': g.onHold.length, 'Внутренние_Запросы_Закрыто': g.internalRequests.length } : {}),
+      ...(isExec ? { 'В_Работе_ASSIGNED': groupAssignedAll.length, 'На_Удержании_ON_HOLD': groupOnHoldAll.length, 'Внутренние_Запросы_Закрыто': g.internalRequests.length } : {}),
       'Всего': g.all.length, 'Без_Метки': g.noMark.length, 'С_Меткой_Всего': g.withMarks.length
     };
     sortedMarks.forEach(m => { gExp[`Метка: ${m}`] = (g.byMark[m] || []).length; });
@@ -1911,14 +1999,16 @@ function renderWidgetTable(mode) {
 
     html += `<tr class="group-row">
       <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span><span data-grp-types="${g.groupName}" title="Раскрыть типы документов группы" style="float:right; cursor:pointer; color:var(--o3-blue);">${isGroupTypesExpanded ? '▼ типы' : '▶ типы'}</span></td>
-      ${isExec ? makeAssignedCell(g.assigned, `Группа: ${g.groupName}`, 'Сейчас в работе (ASSIGNED)') : ''}
-      ${isExec ? makeAssignedCell(g.onHold, `Группа: ${g.groupName}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}
-      ${isExec ? makeInternalRequestCell(g.internalRequests.length) : ''}
+      ${isExec ? makeAssignedCell(groupAssignedAll, `Группа: ${g.groupName}`, 'Документы и внутренние запросы в работе сейчас', 'В работе (на сейчас)') : ''}
+      ${isExec ? makeAssignedCell(groupOnHoldAll, `Группа: ${g.groupName}`, 'Документы и внутренние запросы на удержании сейчас', 'На удержании (на сейчас)') : ''}
+      ${isExec ? makeInternalRequestCell(groupRequests, groupRequestKey, isGroupRequestsExpanded, dateRu) : ''}
       ${makeDrillCell(g.all, `Группа: ${g.groupName}`, `Все документы подразделения за ${dateRu}`, mode)}
       ${makeDrillCell(g.noMark, `Группа: ${g.groupName}`, `Без метки за ${dateRu}`, mode)}
       ${makeDrillCell(g.withMarks, `Группа: ${g.groupName}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
       ${grpMarkCells}
     </tr>`;
+
+    if (!isCol && isGroupRequestsExpanded) html += renderInternalRequestCategoryRows(groupRequests, `Группа: ${g.groupName}`);
 
     if (!isCol && isGroupTypesExpanded) {
       groupDocTypes.forEach(dt => {
@@ -1939,6 +2029,11 @@ function renderWidgetTable(mode) {
       sortedUsers.forEach(u => {
         const userKey = `${g.groupName}__${u.person}`;
         const isUserExp = st.expandedUsers.has(userKey);
+        const userRequestKey = `user:${encodeURIComponent(userKey)}`;
+        const isUserRequestsExpanded = st.expandedUserRequestCategories.has(userRequestKey);
+        const userRequests = [...u.internalRequests, ...u.internalRequestsInWork, ...u.internalRequestsOnHold];
+        const userAssignedAll = [...u.assigned, ...u.internalRequestsInWork];
+        const userOnHoldAll = [...u.onHold, ...u.internalRequestsOnHold];
         const sortedDocTypes = Array.from(u.docTypes.values()).sort((a, b) => (b.all.length + b.assigned.length + b.onHold.length) - (a.all.length + a.assigned.length + a.onHold.length));
         const statusRender = getPersonStatusRender(u.statusInfo, st.fetchedAt, u.person);
         const actionsHtml = buildPersonActionButtonsHtml(u.upn);
@@ -1947,7 +2042,7 @@ function renderWidgetTable(mode) {
         const uExp = {
           'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
           [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': '[ВСЕ ТИПЫ СОТРУДНИКА]',
-          ...(isExec ? { 'В_Работе_ASSIGNED': u.assigned.length, 'На_Удержании_ON_HOLD': u.onHold.length, 'Внутренние_Запросы_Закрыто': u.internalRequests.length, 'Детали_В_Работе': assignedDetailsStr } : {}),
+          ...(isExec ? { 'В_Работе_ASSIGNED': userAssignedAll.length, 'На_Удержании_ON_HOLD': userOnHoldAll.length, 'Внутренние_Запросы_Закрыто': u.internalRequests.length, 'Детали_В_Работе': assignedDetailsStr } : {}),
           'Всего': u.all.length, 'Без_Метки': u.noMark.length, 'С_Меткой_Всего': u.withMarks.length
         };
         sortedMarks.forEach(m => { uExp[`Метка: ${m}`] = (u.byMark[m] || []).length; });
@@ -1965,14 +2060,16 @@ function renderWidgetTable(mode) {
           <td class="sticky-col" data-usr="${userKey}" title="Нажмите, чтобы раскрыть по типам документа (${u.person})">
             <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}
           </td>
-          ${isExec ? makeAssignedCell(u.assigned, u.person, `Группа: ${g.groupName} · Сейчас в работе (ASSIGNED)`) : ''}
-          ${isExec ? makeAssignedCell(u.onHold, u.person, `Группа: ${g.groupName} · Сейчас на удержании (ON_HOLD)`, 'На удержании (ON_HOLD)') : ''}
-          ${isExec ? makeInternalRequestCell(u.internalRequests.length) : ''}
+          ${isExec ? makeAssignedCell(userAssignedAll, u.person, `Группа: ${g.groupName} · Документы и внутренние запросы в работе сейчас`, 'В работе (на сейчас)') : ''}
+          ${isExec ? makeAssignedCell(userOnHoldAll, u.person, `Группа: ${g.groupName} · Документы и внутренние запросы на удержании сейчас`, 'На удержании (на сейчас)') : ''}
+          ${isExec ? makeInternalRequestCell(userRequests, userRequestKey, isUserRequestsExpanded, dateRu) : ''}
           ${makeDrillCell(u.all, u.person, `Группа: ${g.groupName} · Статус: ${statusRender.text || '—'} · Все документы за ${dateRu}`, mode)}
           ${makeDrillCell(u.noMark, u.person, `Группа: ${g.groupName} · Без метки за ${dateRu}`, mode)}
           ${makeDrillCell(u.withMarks, u.person, `Группа: ${g.groupName} · Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
           ${usrMarkCells}
         </tr>`;
+
+        if (isUserRequestsExpanded) html += renderInternalRequestCategoryRows(userRequests, `${g.groupName} · ${u.person}`);
 
         if (isUserExp) {
           sortedDocTypes.forEach(dt => {
@@ -2006,10 +2103,13 @@ function renderWidgetTable(mode) {
   });
 
   if (sortedGroups.length > 0) {
+    const totalRequestKey = 'total';
+    const totalAssignedAll = [...grandAssigned, ...filteredInternalRequestsInWork];
+    const totalOnHoldAll = [...filteredOnHold, ...filteredInternalRequestsOnHold];
     const totExp = {
       'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
       [st.roleTitle]: 'ОБЩИЙ ИТОГ', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
-      ...(isExec ? { 'В_Работе_ASSIGNED': grandAssigned.length, 'На_Удержании_ON_HOLD': filteredOnHold.length, 'Внутренние_Запросы_Закрыто': filteredInternalRequests.length, 'Детали_В_Работе': '' } : {}),
+      ...(isExec ? { 'В_Работе_ASSIGNED': totalAssignedAll.length, 'На_Удержании_ON_HOLD': totalOnHoldAll.length, 'Внутренние_Запросы_Закрыто': filteredInternalRequests.length, 'Детали_В_Работе': '' } : {}),
       'Всего': filtered.length, 'Без_Метки': grandNoMark.length, 'С_Меткой_Всего': grandWithMarks.length
     };
     sortedMarks.forEach(m => { totExp[`Метка: ${m}`] = (grandByMark[m] || []).length; });
@@ -2021,14 +2121,16 @@ function renderWidgetTable(mode) {
 
     html += `<tr class="total-row">
       <td class="sticky-col" data-total-types title="Нажмите, чтобы раскрыть типы документов общего итога">ИТОГО ЗА ${dateRu} <span style="float:right; cursor:pointer; color:var(--o3-blue);">${st.totalDocTypesExpanded ? '▼ типы' : '▶ типы'}</span></td>
-      ${isExec ? makeAssignedCell(grandAssigned, 'Все подразделения', 'Всего сейчас в работе (ASSIGNED)') : ''}
-      ${isExec ? makeAssignedCell(filteredOnHold, 'Все подразделения', 'Всего сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}
-      ${isExec ? makeInternalRequestCell(filteredInternalRequests.length) : ''}
+      ${isExec ? makeAssignedCell(totalAssignedAll, 'Все подразделения', 'Документы и внутренние запросы в работе сейчас', 'В работе (на сейчас)') : ''}
+      ${isExec ? makeAssignedCell(totalOnHoldAll, 'Все подразделения', 'Документы и внутренние запросы на удержании сейчас', 'На удержании (на сейчас)') : ''}
+      ${isExec ? makeInternalRequestCell(allInternalRequests, totalRequestKey, st.totalRequestCategoriesExpanded, dateRu) : ''}
       ${makeDrillCell(filtered, `Все подразделения за ${dateRu}`, 'Общий итог за день', mode)}
       ${makeDrillCell(grandNoMark, `Без метки за ${dateRu}`, 'Общий итог за день', mode)}
       ${makeDrillCell(grandWithMarks, `Все с метками за ${dateRu}`, 'Общий итог за день', mode, 'marks-parent-cell')}
       ${totMarkCells}
     </tr>`;
+
+    if (st.totalRequestCategoriesExpanded) html += renderInternalRequestCategoryRows(allInternalRequests, 'Общий итог');
 
     if (st.totalDocTypesExpanded) {
       grandDocTypes.forEach(dt => {
@@ -2213,6 +2315,21 @@ function bindWidgetEvents(mode) {
 
   document.getElementById(`${p}Table`).addEventListener('click', (e) => {
     if (e.target.closest('.col-resizer') || e.target.closest('[data-copy-upn]') || e.target.closest('[data-chatzone-link]')) return;
+    const requestCategories = e.target.closest('[data-request-categories]');
+    if (requestCategories) {
+      e.stopPropagation();
+      const key = requestCategories.getAttribute('data-request-categories');
+      if (key === 'total') st.totalRequestCategoriesExpanded = !st.totalRequestCategoriesExpanded;
+      else if (key.startsWith('group:')) {
+        if (st.expandedGroupRequestCategories.has(key)) st.expandedGroupRequestCategories.delete(key);
+        else st.expandedGroupRequestCategories.add(key);
+      } else if (key.startsWith('user:')) {
+        if (st.expandedUserRequestCategories.has(key)) st.expandedUserRequestCategories.delete(key);
+        else st.expandedUserRequestCategories.add(key);
+      }
+      renderWidgetTable(mode);
+      return;
+    }
     if (e.target.closest(`[data-toggle-marks="${mode}"]`)) {
       st.isMarksExpanded = !st.isMarksExpanded;
       renderWidgetTable(mode);
@@ -2262,7 +2379,7 @@ function bindWidgetEvents(mode) {
     st.allUsersExpanded = !st.allUsersExpanded;
     st.totalDocTypesExpanded = st.allUsersExpanded;
     if (st.allUsersExpanded) {
-      const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs] : st.docs;
+      const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
       allSource.forEach(d => st.expandedUsers.add(`${getGroupByMode(d, mode)}__${getPersonByMode(d, mode)}`));
       allSource.forEach(d => st.expandedGroupDocTypes.add(getGroupByMode(d, mode)));
     } else {
@@ -2292,7 +2409,7 @@ function bindWidgetEvents(mode) {
     renderWidgetTable(mode);
   };
   document.getElementById(`${p}BtnCollapseGroups`).onclick = () => {
-    const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs] : st.docs;
+    const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
     allSource.forEach(d => st.collapsedGroups.add(getGroupByMode(d, mode)));
     renderWidgetTable(mode);
   };
@@ -2421,6 +2538,17 @@ document.getElementById('btnDrCsv').onclick = () => {
 // === АВТОПРОВЕРКА ОБНОВЛЕНИЙ С GITHUB (логин V-M221) ===
 const GITHUB_MANIFEST_URL = "https://raw.githubusercontent.com/V-M221/ozon-sed-dashboard/main/manifest.json";
 
+function compareVersionNumbers(a, b) {
+  const partsA = String(a || '').split(/[.+-]/).slice(0, 3).map(part => Number.parseInt(part, 10));
+  const partsB = String(b || '').split(/[.+-]/).slice(0, 3).map(part => Number.parseInt(part, 10));
+  if (partsA.length !== 3 || partsB.length !== 3 || [...partsA, ...partsB].some(part => !Number.isFinite(part))) return 0;
+  for (let i = 0; i < 3; i++) {
+    if (partsA[i] > partsB[i]) return 1;
+    if (partsA[i] < partsB[i]) return -1;
+  }
+  return 0;
+}
+
 async function checkForGithubUpdates() {
   const localVersion = chrome.runtime.getManifest().version;
   const btnReload = document.getElementById('btnReloadExt');
@@ -2439,7 +2567,7 @@ async function checkForGithubUpdates() {
     const remoteManifest = await res.json();
     const remoteVersion = remoteManifest && remoteManifest.version;
 
-    if (remoteVersion && remoteVersion !== localVersion) {
+    if (remoteVersion && compareVersionNumbers(remoteVersion, localVersion) > 0) {
       const banner = document.getElementById('updateBanner');
       const textEl = document.getElementById('updateBannerText');
       if (banner && textEl) {

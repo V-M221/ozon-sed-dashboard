@@ -211,6 +211,10 @@
     }
     .alert-pill.red { background: rgba(249, 17, 85, 0.14); color: var(--o3-red); }
     .alert-pill.amber { background: rgba(217, 119, 6, 0.15); color: var(--o3-amber); }
+    .alert-filter-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px; padding: 8px 12px 0;
+    }
 
     .assign-toolbar {
       padding: 8px 12px; background: var(--o3-surface);
@@ -528,6 +532,8 @@
       background: var(--o3-blue); color: #fff; transform: scale(1.05);
     }
     .cell-zero { color: var(--o3-text-muted); opacity: 0.45; user-select: none; }
+    th.internal-request-col { background: rgba(99, 102, 241, 0.10) !important; color: #4F46E5 !important; }
+    td.internal-request-cell { text-align: center; font-weight: 700; color: #4F46E5; }
 
     /* Скелетоны загрузки */
     .sk-wrap { padding: 14px; display: none; }
@@ -706,6 +712,10 @@
           <span style="display:inline-flex; align-items:center; gap:6px;"><svg class="o3-svg-icon" style="color:var(--o3-red);" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C9.44772 1 9 1.44772 9 2C9 2.55228 9.44772 3 10 3H14C14.5523 3 15 2.55228 15 2C15 1.44772 14.5523 1 14 1H10Z" fill="currentColor"/><path d="M19.7071 3.29289C19.3166 2.90237 18.6834 2.90237 18.2929 3.29289C17.9024 3.68342 17.9024 4.31658 18.2929 4.70711L19.2929 5.70711C19.6834 6.09763 20.3166 6.09763 20.7071 5.70711C21.0976 5.31658 21.0976 4.68342 20.7071 4.29289L19.7071 3.29289Z" fill="currentColor"/><path d="M12 22C17.5842 22 21 18.5842 21 13C21 7.4158 17.5842 4 12 4C6.4158 4 3 7.4158 3 13C3 18.5842 6.4158 22 12 22ZM15.8 9.6L13.8396 12.2139C13.9428 12.4552 14 12.7209 14 13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13C10 11.8954 10.8954 11 12 11C12.081 11 12.1609 11.0048 12.2394 11.0142L14.2 8.4C14.5314 7.95817 15.1582 7.86863 15.6 8.2C16.0418 8.53137 16.1314 9.15817 15.8 9.6Z" fill="currentColor"/></svg> Просроченные документы <span id="badgeOverdueCount" class="alert-pill red">…</span></span>
           <button id="btnCsvOverdue" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">CSV</button>
         </summary>
+        <div class="alert-filter-row">
+          <div id="alertOriginFilterOverdue" class="o3-field" data-label="Происхождение"></div>
+          <div id="alertQueueFilterOverdue" class="o3-field" data-label="Очередь"></div>
+        </div>
         <div class="assign-toolbar">
           <label class="assign-select-all">
             <input type="checkbox" id="chkAllOverdue">
@@ -737,6 +747,10 @@
           </span>
           <button id="btnCsvDueToday" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">CSV</button>
         </summary>
+        <div class="alert-filter-row">
+          <div id="alertOriginFilterDueToday" class="o3-field" data-label="Происхождение"></div>
+          <div id="alertQueueFilterDueToday" class="o3-field" data-label="Очередь"></div>
+        </div>
         <div class="assign-toolbar">
           <label class="assign-select-all">
             <input type="checkbox" id="chkAllDueToday">
@@ -772,6 +786,7 @@
         <div id="exWrapGroup" class="o3-field" data-label="Группа исполнителей"></div>
         <div id="exWrapPerson" class="o3-field" data-label="Исполнитель"></div>
         <div id="exWrapQueue" class="o3-field" data-label="Очередь"></div>
+        <div id="exWrapOrigin" class="o3-field" data-label="Происхождение"></div>
         <div id="exWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
         <div style="display:flex; gap:6px; align-items:stretch;">
@@ -854,6 +869,7 @@
         <div id="rgWrapGroup" class="o3-field" data-label="Группа регистраторов"></div>
         <div id="rgWrapPerson" class="o3-field" data-label="Регистратор"></div>
         <div id="rgWrapQueue" class="o3-field" data-label="Очередь"></div>
+        <div id="rgWrapOrigin" class="o3-field" data-label="Происхождение"></div>
         <div id="rgWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
         <div style="display:flex; gap:6px; align-items:stretch;">

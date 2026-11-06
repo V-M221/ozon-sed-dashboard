@@ -7,6 +7,8 @@
   const OPERATOR_API_URL = "https://crm.bank.ozon.ru/api/operatorList.json";
   const GROUP_API_URL = "https://crm.bank.ozon.ru/api/operatorsGroups.json";
   const STATUS_HISTORY_URL = "https://crm.bank.ozon.ru/api/operatorStatusHistory.json";
+  const INTERNAL_REQUESTS_URL = "https://crm.bank.ozon.ru/api/alertsStatistic.json";
+  const INTERNAL_REQUEST_ALERT_TYPE_ID = 2916;
   const HEARTBEAT_URL = "https://crm.bank.ozon.ru/api/heartBeat.json";
   const CONCURRENCY_LIMIT = 20;
 
@@ -40,6 +42,10 @@
         details: details ? (typeof details === 'string' ? details : JSON.stringify(details)) : null
       }
     }, '*');
+  }
+
+  function logRequestFilter(label, filter) {
+    sendLog('info', `${label} · фильтр: ${JSON.stringify(filter)}`);
   }
 
   if (!window.__OZON_ORIG_FETCH__) {
@@ -133,7 +139,9 @@
 
     const p = (async () => {
       try {
-        const filterStr = encodeURIComponent(JSON.stringify({ GroupsIdIn: [Number(groupId)] }));
+        const filter = { GroupsIdIn: [Number(groupId)] };
+        logRequestFilter('Запрос группы оператора', filter);
+        const filterStr = encodeURIComponent(JSON.stringify(filter));
         const url = `${GROUP_API_URL}?page=1&perPage=1&filter=${filterStr}&sort=CREATED_AT&sortDirection=DESC`;
         const res = await safeFetch(url, {
           method: 'GET',
@@ -159,7 +167,9 @@
 
     const p = (async () => {
       try {
-        const filterStr = encodeURIComponent(JSON.stringify({ operatorIds: [Number(operatorId)] }));
+        const filter = { operatorIds: [Number(operatorId)] };
+        logRequestFilter('Запрос истории статуса оператора', filter);
+        const filterStr = encodeURIComponent(JSON.stringify(filter));
         const pagStr = encodeURIComponent(JSON.stringify({ cursor: null, perPage: 40 }));
         const url = `${STATUS_HISTORY_URL}?filter=${filterStr}&pagination=${pagStr}`;
         const res = await safeFetch(url, {
@@ -195,7 +205,9 @@
       if (!baseProfilePromise && cleanUpn) {
         baseProfilePromise = (async () => {
           try {
-            const filterStr = encodeURIComponent(JSON.stringify({ nameOrUpnLike: cleanUpn }));
+            const filter = { nameOrUpnLike: cleanUpn };
+            logRequestFilter('Поиск оператора', filter);
+            const filterStr = encodeURIComponent(JSON.stringify(filter));
             const url = `${OPERATOR_API_URL}?page=1&perPage=40&sort=SORT_BY_CREATED_AT&sortDirection=DESC&filter=${filterStr}&withTotal=true`;
             const res = await safeFetch(url, {
               method: 'GET',
@@ -285,6 +297,7 @@
   }
 
   async function fetchAllByFilter(filterObj) {
+    logRequestFilter('Запрос searchDocuments', filterObj);
     let cursor = null;
     let activePerPage = 200;
     let allDocs = [];
@@ -328,15 +341,93 @@
     return allDocs;
   }
 
+  async function fetchClosedInternalRequestsByDate(targetDateYMD) {
+    const filter = {
+      alertStatusIn: ['CLOSED'],
+      createdFrom: '2026-01-01T00:00:00+03:00',
+      createdTo: '2027-12-31T23:59:59+03:00',
+      closedAtFrom: `${targetDateYMD}T00:00:00+03:00`,
+      closedAtTo: `${targetDateYMD}T23:59:59+03:00`,
+      alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID
+    };
+    logRequestFilter('Запрос закрытых внутренних запросов', filter);
+
+    const perPage = 100;
+    const allItems = [];
+    let page = 1;
+    let totalPages = 1;
+    while (page <= totalPages && page <= 100) {
+      const params = new URLSearchParams({
+        page: String(page),
+        perPage: String(perPage),
+        sort: 'CREATED_AT',
+        sortDirection: 'DESC',
+        filter: JSON.stringify(filter)
+      });
+      const res = await safeFetch(`${INTERNAL_REQUESTS_URL}?${params.toString()}`, {
+        method: 'GET',
+        headers: buildCleanHeaders(false)
+      });
+      if (!res.ok) throw new Error(`alertsStatistic.json вернул HTTP ${res.status}`);
+      const data = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      allItems.push(...items.filter(item => item.status === 'CLOSED' && item.origin === 'CHANNEL_INTERNAL_REQUEST'));
+      totalPages = Number(data.pageInfo && data.pageInfo.totalPages) || (items.length === perPage ? page + 1 : page);
+      page++;
+      if (items.length === 0) break;
+    }
+
+    const operatorInfoByKey = new Map();
+    const uniqueOperators = new Map();
+    allItems.forEach(item => {
+      const upn = String(item.operatorUpn || '').trim();
+      const id = item.operatorID || null;
+      const key = upn.toLowerCase() || `id:${id || 'unassigned'}`;
+      if (!uniqueOperators.has(key)) uniqueOperators.set(key, { upn, id });
+    });
+    await Promise.all(Array.from(uniqueOperators.entries()).map(async ([key, operator]) => {
+      operatorInfoByKey.set(key, await getOperatorDetails(operator.upn, operator.id));
+    }));
+
+    return allItems.map(item => {
+      const upn = String(item.operatorUpn || '').trim();
+      const key = upn.toLowerCase() || `id:${item.operatorID || 'unassigned'}`;
+      const operatorInfo = operatorInfoByKey.get(key) || { operatorId: item.operatorID || null, fullName: '', groupName: 'Без группы', currentStatus: 'UNKNOWN_STATUS', statusSetAt: null };
+      return {
+        id: String(item.id || ''),
+        documentName: '',
+        isInternalRequest: true,
+        internalRequestId: String(item.id || ''),
+        internalRequestClosedAt: item.closedAt || null,
+        createdAt: item.createdAt || null,
+        updatedAt: item.closedAt || item.statusUpdatedAt || null,
+        documentTypeName: '',
+        operatorInfo,
+        ticket: {
+          id: item.id,
+          status: item.status,
+          operator: { id: item.operatorID || null, upn },
+          queue: item.queue || null,
+          origin: item.origin || '',
+          firstOrigin: item.firstOrigin || '',
+          marks: Array.isArray(item.marks) ? item.marks : []
+        },
+        ticketMarks: []
+      };
+    });
+  }
+
   // === ПОИСК ОПЕРАТОРОВ СЭД (POST /apps/sed/api/operators) ===
   async function searchSedOperators(query, section) {
     try {
       const cleanQuery = String(query || '').trim();
+      const filter = { NameOrUpnLike: cleanQuery };
+      logRequestFilter('Поиск операторов СЭД', filter);
       const res = await safeFetch(SED_OPERATORS_URL, {
         method: 'POST',
         headers: buildCleanHeaders(true),
         body: JSON.stringify({
-          filter: { NameOrUpnLike: cleanQuery }
+          filter
         })
       });
 
@@ -495,13 +586,14 @@
   }
 
   // === СБОР ДЕДЛАЙНОВ + ВСЕХ ДОКУМЕНТОВ В РАБОТЕ (ASSIGNED) ===
-  async function fetchDeadlinesAndAssignedAlerts(customDueDateYMD = null) {
+  async function fetchDeadlinesAndAssignedAlerts(customDueDateYMD = null, closedDateYMD = null) {
     try {
       const now = new Date();
       const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
       const yesterdayYMD = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
       const targetDueYMD = customDueDateYMD || todayYMD;
+      const targetClosedYMD = closedDateYMD || targetDueYMD;
 
       // 1) Просроченные (до конца вчерашнего дня)
       const overdueFilter = {
@@ -534,16 +626,20 @@
         documentCreatedTo: "2027-12-31T23:59:59+03:00"
       };
 
-      sendLog('info', `Запрос дедлайнов (на ${targetDueYMD}), документов в работе и на удержании...`);
+      sendLog('info', `Запрос дедлайнов (на ${targetDueYMD}), документов в работе, на удержании и закрытых внутренних запросов (на ${targetClosedYMD})...`);
 
-      const [overdueDocs, dueTodayDocs, assignedDocs, onHoldDocs] = await Promise.all([
+      const [overdueDocs, dueTodayDocs, assignedDocs, onHoldDocs, closedInternalRequests] = await Promise.all([
         fetchAllByFilter(overdueFilter),
         fetchAllByFilter(dueTodayFilter),
         fetchAllByFilter(assignedFilter),
-        fetchAllByFilter(onHoldFilter)
+        fetchAllByFilter(onHoldFilter),
+        fetchClosedInternalRequestsByDate(targetClosedYMD).catch(e => {
+          sendLog('error', `Не удалось загрузить закрытые внутренние запросы: ${e.message}`);
+          return [];
+        })
       ]);
 
-      sendLog('success', `Доп. данные загружены: В работе = ${assignedDocs.length} шт., На удержании = ${onHoldDocs.length} шт., Просрочено = ${overdueDocs.length} шт., Истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
+      sendLog('success', `Доп. данные загружены: В работе = ${assignedDocs.length} шт., На удержании = ${onHoldDocs.length} шт., Внутренние запросы закрыты = ${closedInternalRequests.length} шт., Просрочено = ${overdueDocs.length} шт., Истекает (${targetDueYMD}) = ${dueTodayDocs.length} шт.`);
 
       window.postMessage({
         source: 'CRM_INJECTOR',
@@ -554,7 +650,8 @@
           overdueDocs,
           dueTodayDocs,
           assignedDocs,
-          onHoldDocs
+          onHoldDocs,
+          closedInternalRequests
         }
       }, '*');
     } catch (e) {
@@ -594,6 +691,9 @@
         ticketUpdatedTo: `${targetDateYMD}T23:59:59+03:00`
       };
     }
+
+    logRequestFilter(`Фильтр countDocuments [${activeMode}]`, exactFilter);
+    logRequestFilter(`Фильтр searchDocuments [${activeMode}]`, exactFilter);
 
     let expectedCount = null;
     try {
@@ -653,6 +753,7 @@
 
         if (!res.ok && pageNum === 1 && activeMode === 'registrars') {
           delete exactFilter.statusIn;
+          logRequestFilter('Повторный фильтр searchDocuments [registrars без statusIn]', exactFilter);
           bodyPayload.filter = exactFilter;
           res = await safeFetch(TARGET_URL, {
             method: 'POST',
@@ -711,7 +812,7 @@
         }, '*');
 
         if (activeMode === 'executors') {
-          await fetchDeadlinesAndAssignedAlerts(customDueDateYMD);
+          await fetchDeadlinesAndAssignedAlerts(customDueDateYMD, targetDateYMD);
         }
       }
     } catch (err) {

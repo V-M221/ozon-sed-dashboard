@@ -8,6 +8,7 @@
   const GROUP_API_URL = "https://crm.bank.ozon.ru/api/operatorsGroups.json";
   const STATUS_HISTORY_URL = "https://crm.bank.ozon.ru/api/operatorStatusHistory.json";
   const INTERNAL_REQUESTS_URL = "https://crm.bank.ozon.ru/api/alertsStatistic.json";
+  const INTERNAL_REQUEST_ALERT_TYPE_ID = 2916;
   const HEARTBEAT_URL = "https://crm.bank.ozon.ru/api/heartBeat.json";
   const CONCURRENCY_LIMIT = 20;
 
@@ -420,7 +421,8 @@
       createdFrom: '2026-01-01T00:00:00+03:00',
       createdTo: '2027-12-31T23:59:59+03:00',
       closedAtFrom: `${targetDateYMD}T00:00:00+03:00`,
-      closedAtTo: `${targetDateYMD}T23:59:59+03:00`
+      closedAtTo: `${targetDateYMD}T23:59:59+03:00`,
+      alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID
     };
     return fetchInternalRequestsByFilter(filter, 'Запрос закрытых внутренних запросов');
   }
@@ -429,7 +431,8 @@
     const filter = {
       alertStatusIn: ['ASSIGNED', 'ON_HOLD'],
       createdFrom: '2026-01-01T00:00:00+03:00',
-      createdTo: '2027-12-31T23:59:59+03:00'
+      createdTo: '2027-12-31T23:59:59+03:00',
+      alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID
     };
     return fetchInternalRequestsByFilter(filter, 'Запрос внутренних запросов в работе и на удержании');
   }

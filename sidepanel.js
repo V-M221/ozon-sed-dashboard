@@ -296,7 +296,7 @@ document.addEventListener('mouseover', (e) => {
   let html = `<div class="aft-title">${tip.label}: ${docs.length} ${itemLabel} (время с посл. апдейта)</div>`;
   html += shown.map(d => {
     const dur = formatStatusDuration(d.updatedAt || d.createdAt, refNow) || 'только что';
-    const typeName = d.isInternalRequest ? `Внутренний запрос · ${getInternalRequestCategory(d)}` : getDocType(d);
+    const typeName = d.isInternalRequest ? `Внутренний запрос · ${getInternalRequestTheme(d)}` : getDocType(d);
     const docNum = d.isInternalRequest ? d.internalRequestId : d.documentName || '';
     return `<div class="aft-row">
       <div class="aft-type">${escapeHtml(typeName)}<span class="aft-doc">${docNum ? `(${escapeHtml(docNum)})` : ''}</span></div>
@@ -403,6 +403,23 @@ function setMultiSelectOptions(containerId, items, customLabels = {}) {
   renderMultiSelectOptions(state, '');
 }
 
+function syncExecutorSharedFilter(sourceId, kind, rerender = true) {
+  const source = multiSelectRegistry.get(sourceId);
+  if (!source) return;
+  const targetIds = kind === 'Queue'
+    ? ['exWrapQueue', 'alertQueueFilterOverdue', 'alertQueueFilterDueToday']
+    : ['exWrapOrigin', 'alertOriginFilterOverdue', 'alertOriginFilterDueToday'];
+  targetIds.forEach(id => {
+    if (id === sourceId) return;
+    const target = multiSelectRegistry.get(id);
+    if (!target) return;
+    target.selected = new Set(source.selected);
+    updateMultiSelectHeader(target);
+    renderMultiSelectOptions(target, '');
+  });
+  if (rerender) renderWidgetTable('executors');
+}
+
 function updateMultiSelectHeader(state) {
   const el = document.getElementById(state.containerId);
   if (!el) return;
@@ -457,7 +474,7 @@ function closeAllMultiSelects() {
 }
 
 function setFiltersSkeleton(prefix, show) {
-  const fields = ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Mark'];
+  const fields = ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Origin', 'Mark'];
   fields.forEach(f => {
     const containerId = `${prefix}Wrap${f}`;
     const el = document.getElementById(containerId);
@@ -531,14 +548,14 @@ const STATE = {
   executors: {
     prefix: 'ex', mode: 'executors', roleTitle: 'Исполнитель', dateColName: 'Дата_Закрытия',
     docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
-    expandedGroupRequestCategories: new Set(), expandedUserRequestCategories: new Set(), totalRequestCategoriesExpanded: false,
-    allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
+    expandedGroupRequestThemes: new Set(), expandedUserRequestThemes: new Set(), totalRequestThemesExpanded: false,
+    allUsersExpanded: false, isTotalsBreakdownExpanded: false, isMarksExpanded: false, lastExportRows: [], hasLoadedOnce: false
   },
   registrars: {
     prefix: 'rg', mode: 'registrars', roleTitle: 'Регистратор', dateColName: 'Дата_Создания',
     docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
-    expandedGroupRequestCategories: new Set(), expandedUserRequestCategories: new Set(), totalRequestCategoriesExpanded: false,
-    allUsersExpanded: false, isMarksExpanded: true, lastExportRows: [], hasLoadedOnce: false
+    expandedGroupRequestThemes: new Set(), expandedUserRequestThemes: new Set(), totalRequestThemesExpanded: false,
+    allUsersExpanded: false, isTotalsBreakdownExpanded: false, isMarksExpanded: false, lastExportRows: [], hasLoadedOnce: false
   }
 };
 
@@ -665,13 +682,9 @@ function getOrigin(d) {
   const value = d && (d.origin || d.firstOrigin) || t.origin || t.firstOrigin || '';
   return String(value || 'Не указано');
 }
-function getInternalRequestCategory(d) {
-  const alertType = (d && (d.alertType || (d.ticket && d.ticket.alertType))) || null;
-  if (typeof alertType === 'string') return alertType || 'Не указана';
-  if (alertType && typeof alertType === 'object') {
-    return String(alertType.name || alertType.title || alertType.label || alertType.code || alertType.id || 'Не указана');
-  }
-  return String((d && d.alertTypeName) || (d && d.ticket && d.ticket.alertTypeName) || 'Не указана');
+function getInternalRequestTheme(d) {
+  const t = d && d.ticket || {};
+  return String((d && (d.themeName || d.theme_name)) || t.themeName || 'Без темы');
 }
 function getPersonByMode(d, mode) { return mode === 'registrars' ? getCreatorLabel(d) : getOperatorLabel(d); }
 function getPersonUpnByMode(d, mode) { return mode === 'registrars' ? getCreatorUpn(d) : getOperatorUpn(d); }
@@ -962,24 +975,29 @@ function renderDeadlineAccordions() {
 }
 
 function bindDeadlineFilterControls() {
-  [['Overdue', rawOverdueDocs], ['DueToday', rawDueTodayDocs]].forEach(([section]) => {
+  ['Overdue', 'DueToday'].forEach(section => {
     const suffix = section === 'Overdue' ? 'Overdue' : 'DueToday';
-    initMultiSelect(`alertOriginFilter${suffix}`, 'Происхождение', 'Все происхождения', renderDeadlineAccordions);
-    initMultiSelect(`alertQueueFilter${suffix}`, 'Очередь', 'Все очереди', renderDeadlineAccordions);
+    initMultiSelect(`alertOriginFilter${suffix}`, 'Происхождение', 'Все происхождения', () => syncExecutorSharedFilter(`alertOriginFilter${suffix}`, 'Origin'));
+    initMultiSelect(`alertQueueFilter${suffix}`, 'Очередь', 'Все очереди', () => syncExecutorSharedFilter(`alertQueueFilter${suffix}`, 'Queue'));
   });
   populateDeadlineFilterOptions();
 }
 
 function populateDeadlineFilterOptions() {
-  const sets = [
-    ['Overdue', rawOverdueDocs],
-    ['DueToday', rawDueTodayDocs]
+  const docs = [
+    ...STATE.executors.docs, ...rawOverdueDocs, ...rawDueTodayDocs,
+    ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs,
+    ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold
   ];
-  sets.forEach(([section, docs]) => {
+  const origins = Array.from(new Set(docs.map(getOrigin))).sort();
+  const queues = Array.from(new Set(docs.map(getQueueName))).sort();
+  [['Overdue', rawOverdueDocs], ['DueToday', rawDueTodayDocs]].forEach(([section]) => {
     const suffix = section === 'Overdue' ? 'Overdue' : 'DueToday';
-    setMultiSelectOptions(`alertOriginFilter${suffix}`, Array.from(new Set(docs.map(getOrigin))).sort());
-    setMultiSelectOptions(`alertQueueFilter${suffix}`, Array.from(new Set(docs.map(getQueueName))).sort());
+    setMultiSelectOptions(`alertOriginFilter${suffix}`, origins);
+    setMultiSelectOptions(`alertQueueFilter${suffix}`, queues);
   });
+  syncExecutorSharedFilter('exWrapOrigin', 'Origin', false);
+  syncExecutorSharedFilter('exWrapQueue', 'Queue', false);
 }
 
 async function requestOperatorsSearch(section, queryText) {
@@ -1619,17 +1637,17 @@ chrome.runtime.onMessage.addListener((msg) => {
     rawClosedInternalRequestDocs = msg.payload.closedInternalRequests || [];
     rawInternalRequestsInWork = msg.payload.internalRequestsInWork || [];
     rawInternalRequestsOnHold = msg.payload.internalRequestsOnHold || [];
-    populateDeadlineFilterOptions();
     populateDropdowns('executors');
+    populateDeadlineFilterOptions();
     renderWidgetTable('executors');
     return;
   }
   if (msg.type === 'DUE_DATE_RESULT' && msg.payload) {
     isDueDateSingleLoading = false;
     rawDueTodayDocs = msg.payload.dueTodayDocs || [];
-    populateDeadlineFilterOptions();
     ASSIGN_STATE.DueToday.selectedAlertIds.clear();
     populateDropdowns('executors');
+    populateDeadlineFilterOptions();
     renderDeadlineAccordions();
     return;
   }
@@ -1736,14 +1754,12 @@ function makeAssignedCell(docsArr, title, sub, label = 'В работе (ASSIGNE
   return `<td><span class="cell-btn assigned-btn" data-drill="${key}" data-assigned-tip="${key}">${cnt}</span></td>`;
 }
 
-function makeInternalRequestCell(docs, expansionKey = '', expanded = false, dateRu = '') {
+function makeInternalRequestCell(docs, dateRu = '') {
   const requestDocs = Array.isArray(docs) ? docs : [];
   const cnt = requestDocs.filter(d => d.ticket && d.ticket.status === 'CLOSED').length;
-  const canExpand = requestDocs.length > 0 && expansionKey;
-  const toggle = canExpand ? `<button class="request-category-toggle" data-request-categories="${expansionKey}" title="Раскрыть по категории (типу внутреннего запроса)">${expanded ? '▾' : '▸'}</button>` : '';
   return cnt > 0
-    ? `<td class="internal-request-cell" title="Закрытые внутренние запросы за ${dateRu}"><span>${cnt}</span>${toggle}</td>`
-    : `<td class="cell-zero internal-request-cell" title="Закрытые внутренние запросы за ${dateRu}">0${toggle}</td>`;
+    ? `<td class="internal-request-cell" title="Закрытые внутренние запросы за ${dateRu}">${cnt}</td>`
+    : `<td class="cell-zero internal-request-cell" title="Закрытые внутренние запросы за ${dateRu}">0</td>`;
 }
 
 function renderWidgetTable(mode) {
@@ -1910,46 +1926,69 @@ function renderWidgetTable(mode) {
   const thead = document.querySelector(`#${p}Table thead`);
   const tbody = document.querySelector(`#${p}Table tbody`);
   const markToggleIcon = st.isMarksExpanded ? '◀ Свернуть' : `▶ Развернуть (${sortedMarks.length})`;
-
-  thead.innerHTML = `<tr>
-    <th class="sticky-col" title="Потяните за правый край столбца для изменения ширины">
+  const hasMarkChildren = st.isTotalsBreakdownExpanded && st.isMarksExpanded && sortedMarks.length > 0;
+  const headerDepth = st.isTotalsBreakdownExpanded ? (hasMarkChildren ? 3 : 2) : 1;
+  const headerRowSpan = `rowspan="${headerDepth}"`;
+  let headerHtml = `<tr>
+    <th class="sticky-col" ${headerRowSpan} title="Потяните за правый край столбца для изменения ширины">
       Группа / ${st.roleTitle} / Тип док. (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
-    ${isExec ? `<th class="assigned-col" title="Документы и внутренние запросы со статусом В работе на текущий момент">В работе<br><small>на сейчас</small></th><th class="assigned-col" title="Документы и внутренние запросы со статусом На удержании на текущий момент">На удержании<br><small>на сейчас</small></th>` : ''}
-    ${isExec ? `<th class="internal-request-col" title="Закрытые внутренние запросы за ${dateRu}">Внутренние запросы<br><small>за ${dateRu}</small></th>` : ''}
-    <th title="Всего документов за ${dateRu}">Всего документов<br><small>за ${dateRu}</small></th>
-    <th title="В том числе: документы без метки">В том числе<br>без метки</th>
-    <th class="marks-parent-col" data-toggle-marks="${mode}" title="Нажмите, чтобы свернуть или развернуть детализацию по каждой метке">
-      В том числе: с метками <span style="font-size:10.5px; font-weight:500;">${markToggleIcon}</span>
+    ${isExec ? `<th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом В работе на текущий момент">В работе<br><small>на сейчас</small></th><th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом На удержании на текущий момент">На удержании<br><small>на сейчас</small></th>` : ''}
+    ${isExec ? `<th class="internal-request-col" ${headerRowSpan} title="Закрытые внутренние запросы за ${dateRu}">Внутренние запросы<br><small>за ${dateRu}</small></th>` : ''}
+    <th ${headerRowSpan} data-toggle-breakdown title="Показать или скрыть детализацию общего количества документов за ${dateRu}">
+      Всего документов<br><small>за ${dateRu} · ${st.isTotalsBreakdownExpanded ? '▾ детализация' : '▸ детализация'}</small>
     </th>
-    ${st.isMarksExpanded ? sortedMarks.map(m => `<th class="mark-child-col" title="В том числе документы с меткой: ${m}">В том числе<br>${m}</th>`).join('') : ''}
+    ${st.isTotalsBreakdownExpanded ? `<th colspan="${2 + (hasMarkChildren ? sortedMarks.length : 0)}" class="breakdown-group-col">В том числе</th>` : ''}
   </tr>`;
+  if (st.isTotalsBreakdownExpanded) {
+    headerHtml += `<tr>
+      <th ${hasMarkChildren ? 'rowspan="2"' : ''}>Без метки</th>
+      <th class="marks-parent-col" colspan="${1 + (hasMarkChildren ? sortedMarks.length : 0)}" data-toggle-marks="${mode}" title="Показать или скрыть разбивку по отдельным меткам">
+        С метками <span style="font-size:10.5px; font-weight:500;">${markToggleIcon}</span>
+      </th>
+    </tr>`;
+    if (hasMarkChildren) headerHtml += `<tr>${sortedMarks.map(m => `<th class="mark-child-col" title="Метка: ${m}">${m}</th>`).join('')}</tr>`;
+  }
+  thead.innerHTML = headerHtml;
+
+  function renderBreakdownCells(noMarkDocs, withMarksDocs, byMark, title, subPrefix) {
+    if (!st.isTotalsBreakdownExpanded) return '';
+    const base = `${makeDrillCell(noMarkDocs, title, `${subPrefix}Без метки за ${dateRu}`, mode)}${makeDrillCell(withMarksDocs, title, `${subPrefix}Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}`;
+    const marks = hasMarkChildren
+      ? sortedMarks.map(mark => makeDrillCell((byMark && byMark[mark]) || [], title, `${subPrefix}Метка: «${mark}» · Дата: ${dateRu}`, mode)).join('')
+      : '';
+    return base + marks;
+  }
+
+  function renderBreakdownZeros() {
+    if (!st.isTotalsBreakdownExpanded) return '';
+    return Array.from({ length: 2 + (hasMarkChildren ? sortedMarks.length : 0) }, () => '<td class="cell-zero">0</td>').join('');
+  }
 
   const expRows = [];
   let html = '';
 
-  function renderInternalRequestCategoryRows(requestDocs, contextLabel) {
-    const categories = new Map();
+  function renderInternalRequestThemeRows(requestDocs, contextLabel) {
+    const themes = new Map();
     (requestDocs || []).forEach(d => {
-      const category = getInternalRequestCategory(d);
-      if (!categories.has(category)) categories.set(category, { closed: [], assigned: [], onHold: [] });
-      const entry = categories.get(category);
+      const theme = getInternalRequestTheme(d);
+      if (!themes.has(theme)) themes.set(theme, { closed: [], assigned: [], onHold: [] });
+      const entry = themes.get(theme);
       const status = d.ticket && d.ticket.status;
       if (status === 'CLOSED') entry.closed.push(d);
       else if (status === 'ASSIGNED') entry.assigned.push(d);
       else if (status === 'ON_HOLD') entry.onHold.push(d);
     });
-    const sortedCategories = Array.from(categories.entries()).sort((a, b) =>
+    const sortedThemes = Array.from(themes.entries()).sort((a, b) =>
       (b[1].closed.length + b[1].assigned.length + b[1].onHold.length) -
       (a[1].closed.length + a[1].assigned.length + a[1].onHold.length)
     );
-    return sortedCategories.map(([category, counts]) => {
+    return sortedThemes.map(([theme, counts]) => {
       expRows.push({
         'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu,
-        'Группа': contextLabel, [st.roleTitle]: '[КАТЕГОРИЯ ВНУТРЕННЕГО ЗАПРОСА]',
-        'Тип_Документа': category,
-        'Категория_Внутреннего_Запроса': category,
+        'Группа': contextLabel, [st.roleTitle]: '[ТЕМА ВНУТРЕННЕГО ЗАПРОСА]',
+        'Тема_Внутреннего_Запроса': theme,
         ...(isExec ? {
           'В_Работе_ASSIGNED': counts.assigned.length,
           'На_Удержании_ON_HOLD': counts.onHold.length,
@@ -1957,13 +1996,12 @@ function renderWidgetTable(mode) {
         } : {}),
         'Всего': 0, 'Без_Метки': 0, 'С_Меткой_Всего': 0
       });
-      return `<tr class="request-category-row">
-        <td class="sticky-col">↳ Категория: ${escapeHtml(category)}</td>
-        ${isExec ? makeAssignedCell(counts.assigned, category, `${contextLabel} · Внутренние запросы в работе сейчас`, 'Внутренние запросы в работе (на сейчас)') : ''}
-        ${isExec ? makeAssignedCell(counts.onHold, category, `${contextLabel} · Внутренние запросы на удержании сейчас`, 'Внутренние запросы на удержании (на сейчас)') : ''}
-        ${isExec ? makeInternalRequestCell(counts.closed, '', false, dateRu) : ''}
-        <td class="cell-zero">0</td><td class="cell-zero">0</td><td class="cell-zero">0</td>
-        ${st.isMarksExpanded ? sortedMarks.map(() => '<td class="cell-zero">0</td>').join('') : ''}
+      return `<tr class="doctype-row request-theme-row">
+        <td class="sticky-col">↳ Тема: ${escapeHtml(theme)}</td>
+        ${isExec ? makeAssignedCell(counts.assigned, theme, `${contextLabel} · Внутренние запросы в работе сейчас`, 'Внутренние запросы в работе (на сейчас)') : ''}
+        ${isExec ? makeAssignedCell(counts.onHold, theme, `${contextLabel} · Внутренние запросы на удержании сейчас`, 'Внутренние запросы на удержании (на сейчас)') : ''}
+        ${isExec ? makeInternalRequestCell(counts.closed, dateRu) : ''}
+        ${renderBreakdownZeros()}
       </tr>`;
     }).join('');
   }
@@ -1979,7 +2017,7 @@ function renderWidgetTable(mode) {
     const groupDocTypes = collectDocTypes(sortedUsers);
     const isGroupTypesExpanded = st.expandedGroupDocTypes.has(g.groupName);
     const groupRequestKey = `group:${encodeURIComponent(g.groupName)}`;
-    const isGroupRequestsExpanded = st.expandedGroupRequestCategories.has(groupRequestKey);
+    const isGroupRequestsExpanded = st.expandedGroupRequestThemes.has(groupRequestKey);
     const groupRequests = [...g.internalRequests, ...g.internalRequestsInWork, ...g.internalRequestsOnHold];
     const groupAssignedAll = [...g.assigned, ...g.internalRequestsInWork];
     const groupOnHoldAll = [...g.onHold, ...g.internalRequestsOnHold];
@@ -1993,22 +2031,16 @@ function renderWidgetTable(mode) {
     sortedMarks.forEach(m => { gExp[`Метка: ${m}`] = (g.byMark[m] || []).length; });
     expRows.push(gExp);
 
-    const grpMarkCells = st.isMarksExpanded
-      ? sortedMarks.map(m => makeDrillCell(g.byMark[m] || [], `Группа: ${g.groupName}`, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('')
-      : '';
-
     html += `<tr class="group-row">
-      <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span><span data-grp-types="${g.groupName}" title="Раскрыть типы документов группы" style="float:right; cursor:pointer; color:var(--o3-blue);">${isGroupTypesExpanded ? '▼ типы' : '▶ типы'}</span></td>
+      <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span><span class="tree-detail-controls"><button class="tree-detail-control" data-grp-types="${g.groupName}" title="Раскрыть типы документов группы">${isGroupTypesExpanded ? '▾ типы' : '▸ типы'}</button>${isExec ? `<button class="tree-detail-control" data-request-themes="${groupRequestKey}" title="Раскрыть внутренние запросы группы по теме">${isGroupRequestsExpanded ? '▾ темы' : '▸ темы'}</button>` : ''}</span></td>
       ${isExec ? makeAssignedCell(groupAssignedAll, `Группа: ${g.groupName}`, 'Документы и внутренние запросы в работе сейчас', 'В работе (на сейчас)') : ''}
       ${isExec ? makeAssignedCell(groupOnHoldAll, `Группа: ${g.groupName}`, 'Документы и внутренние запросы на удержании сейчас', 'На удержании (на сейчас)') : ''}
-      ${isExec ? makeInternalRequestCell(groupRequests, groupRequestKey, isGroupRequestsExpanded, dateRu) : ''}
+      ${isExec ? makeInternalRequestCell(groupRequests, dateRu) : ''}
       ${makeDrillCell(g.all, `Группа: ${g.groupName}`, `Все документы подразделения за ${dateRu}`, mode)}
-      ${makeDrillCell(g.noMark, `Группа: ${g.groupName}`, `Без метки за ${dateRu}`, mode)}
-      ${makeDrillCell(g.withMarks, `Группа: ${g.groupName}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
-      ${grpMarkCells}
+      ${renderBreakdownCells(g.noMark, g.withMarks, g.byMark, `Группа: ${g.groupName}`, '')}
     </tr>`;
 
-    if (!isCol && isGroupRequestsExpanded) html += renderInternalRequestCategoryRows(groupRequests, `Группа: ${g.groupName}`);
+    if (!isCol && isGroupRequestsExpanded) html += renderInternalRequestThemeRows(groupRequests, `Группа: ${g.groupName}`);
 
     if (!isCol && isGroupTypesExpanded) {
       groupDocTypes.forEach(dt => {
@@ -2020,8 +2052,7 @@ function renderWidgetTable(mode) {
         };
         sortedMarks.forEach(m => { row[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
         expRows.push(row);
-        const markCells = st.isMarksExpanded ? sortedMarks.map(m => makeDrillCell(dt.byMark[m] || [], `Группа: ${g.groupName} · ${dt.docType}`, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('') : '';
-        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makeAssignedCell(dt.assigned, `Группа: ${g.groupName} · ${dt.docType}`, 'Сейчас в работе (ASSIGNED)') : ''}${isExec ? makeAssignedCell(dt.onHold, `Группа: ${g.groupName} · ${dt.docType}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}${isExec ? makeInternalRequestCell(0) : ''}${makeDrillCell(dt.all, `Группа: ${g.groupName} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${makeDrillCell(dt.noMark, `Группа: ${g.groupName} · ${dt.docType}`, `Без метки за ${dateRu}`, mode)}${makeDrillCell(dt.withMarks, `Группа: ${g.groupName} · ${dt.docType}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}${markCells}</tr>`;
+        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makeAssignedCell(dt.assigned, `Группа: ${g.groupName} · ${dt.docType}`, 'Сейчас в работе (ASSIGNED)') : ''}${isExec ? makeAssignedCell(dt.onHold, `Группа: ${g.groupName} · ${dt.docType}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}${isExec ? makeInternalRequestCell(0) : ''}${makeDrillCell(dt.all, `Группа: ${g.groupName} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `Группа: ${g.groupName} · ${dt.docType}`, '')}</tr>`;
       });
     }
 
@@ -2030,7 +2061,7 @@ function renderWidgetTable(mode) {
         const userKey = `${g.groupName}__${u.person}`;
         const isUserExp = st.expandedUsers.has(userKey);
         const userRequestKey = `user:${encodeURIComponent(userKey)}`;
-        const isUserRequestsExpanded = st.expandedUserRequestCategories.has(userRequestKey);
+        const isUserRequestsExpanded = st.expandedUserRequestThemes.has(userRequestKey);
         const userRequests = [...u.internalRequests, ...u.internalRequestsInWork, ...u.internalRequestsOnHold];
         const userAssignedAll = [...u.assigned, ...u.internalRequestsInWork];
         const userOnHoldAll = [...u.onHold, ...u.internalRequestsOnHold];
@@ -2048,28 +2079,22 @@ function renderWidgetTable(mode) {
         sortedMarks.forEach(m => { uExp[`Метка: ${m}`] = (u.byMark[m] || []).length; });
         expRows.push(uExp);
 
-        const usrMarkCells = st.isMarksExpanded
-          ? sortedMarks.map(m => makeDrillCell(u.byMark[m] || [], u.person, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('')
-          : '';
-
         const personDisplayHtml = u.person === 'Не назначен'
           ? `<span style="color:var(--o3-red); font-weight:700;">🚨 Не назначен</span>`
           : u.person;
 
         html += `<tr class="operator-row">
           <td class="sticky-col" data-usr="${userKey}" title="Нажмите, чтобы раскрыть по типам документа (${u.person})">
-            <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}
+            <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}<span class="tree-detail-controls"><button class="tree-detail-control" data-usr="${userKey}" title="Раскрыть типы документов сотрудника">${isUserExp ? '▾ типы' : '▸ типы'}</button>${isExec ? `<button class="tree-detail-control" data-request-themes="${userRequestKey}" title="Раскрыть внутренние запросы сотрудника по теме">${isUserRequestsExpanded ? '▾ темы' : '▸ темы'}</button>` : ''}</span>
           </td>
           ${isExec ? makeAssignedCell(userAssignedAll, u.person, `Группа: ${g.groupName} · Документы и внутренние запросы в работе сейчас`, 'В работе (на сейчас)') : ''}
           ${isExec ? makeAssignedCell(userOnHoldAll, u.person, `Группа: ${g.groupName} · Документы и внутренние запросы на удержании сейчас`, 'На удержании (на сейчас)') : ''}
-          ${isExec ? makeInternalRequestCell(userRequests, userRequestKey, isUserRequestsExpanded, dateRu) : ''}
+          ${isExec ? makeInternalRequestCell(userRequests, dateRu) : ''}
           ${makeDrillCell(u.all, u.person, `Группа: ${g.groupName} · Статус: ${statusRender.text || '—'} · Все документы за ${dateRu}`, mode)}
-          ${makeDrillCell(u.noMark, u.person, `Группа: ${g.groupName} · Без метки за ${dateRu}`, mode)}
-          ${makeDrillCell(u.withMarks, u.person, `Группа: ${g.groupName} · Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
-          ${usrMarkCells}
+          ${renderBreakdownCells(u.noMark, u.withMarks, u.byMark, u.person, `Группа: ${g.groupName} · `)}
         </tr>`;
 
-        if (isUserRequestsExpanded) html += renderInternalRequestCategoryRows(userRequests, `${g.groupName} · ${u.person}`);
+        if (isUserRequestsExpanded) html += renderInternalRequestThemeRows(userRequests, `${g.groupName} · ${u.person}`);
 
         if (isUserExp) {
           sortedDocTypes.forEach(dt => {
@@ -2082,19 +2107,13 @@ function renderWidgetTable(mode) {
             sortedMarks.forEach(m => { dtExp[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
             expRows.push(dtExp);
 
-            const dtMarkCells = st.isMarksExpanded
-              ? sortedMarks.map(m => makeDrillCell(dt.byMark[m] || [], `${u.person} · ${dt.docType}`, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('')
-              : '';
-
             html += `<tr class="doctype-row">
               <td class="sticky-col" title="Тип документа: ${dt.docType}">↳ ${dt.docType}</td>
               ${isExec ? makeAssignedCell(dt.assigned, `${u.person} · ${dt.docType}`, `Сейчас в работе (ASSIGNED)`) : ''}
               ${isExec ? makeAssignedCell(dt.onHold, `${u.person} · ${dt.docType}`, `Сейчас на удержании (ON_HOLD)`, 'На удержании (ON_HOLD)') : ''}
               ${isExec ? makeInternalRequestCell(0) : ''}
               ${makeDrillCell(dt.all, `${u.person} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}
-              ${makeDrillCell(dt.noMark, `${u.person} · ${dt.docType}`, `Без метки за ${dateRu}`, mode)}
-              ${makeDrillCell(dt.withMarks, `${u.person} · ${dt.docType}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}
-              ${dtMarkCells}
+              ${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `${u.person} · ${dt.docType}`, `Группа: ${g.groupName} · `)}
             </tr>`;
           });
         }
@@ -2103,7 +2122,6 @@ function renderWidgetTable(mode) {
   });
 
   if (sortedGroups.length > 0) {
-    const totalRequestKey = 'total';
     const totalAssignedAll = [...grandAssigned, ...filteredInternalRequestsInWork];
     const totalOnHoldAll = [...filteredOnHold, ...filteredInternalRequestsOnHold];
     const totExp = {
@@ -2115,22 +2133,16 @@ function renderWidgetTable(mode) {
     sortedMarks.forEach(m => { totExp[`Метка: ${m}`] = (grandByMark[m] || []).length; });
     expRows.push(totExp);
 
-    const totMarkCells = st.isMarksExpanded
-      ? sortedMarks.map(m => makeDrillCell(grandByMark[m] || [], `Общий итог по метке «${m}»`, `Дата: ${dateRu}`, mode)).join('')
-      : '';
-
     html += `<tr class="total-row">
-      <td class="sticky-col" data-total-types title="Нажмите, чтобы раскрыть типы документов общего итога">ИТОГО ЗА ${dateRu} <span style="float:right; cursor:pointer; color:var(--o3-blue);">${st.totalDocTypesExpanded ? '▼ типы' : '▶ типы'}</span></td>
+      <td class="sticky-col">ИТОГО ЗА ${dateRu}<span class="tree-detail-controls"><button class="tree-detail-control" data-total-types title="Раскрыть типы документов общего итога">${st.totalDocTypesExpanded ? '▾ типы' : '▸ типы'}</button>${isExec ? `<button class="tree-detail-control" data-request-themes="total" title="Раскрыть внутренние запросы по теме">${st.totalRequestThemesExpanded ? '▾ темы' : '▸ темы'}</button>` : ''}</span></td>
       ${isExec ? makeAssignedCell(totalAssignedAll, 'Все подразделения', 'Документы и внутренние запросы в работе сейчас', 'В работе (на сейчас)') : ''}
       ${isExec ? makeAssignedCell(totalOnHoldAll, 'Все подразделения', 'Документы и внутренние запросы на удержании сейчас', 'На удержании (на сейчас)') : ''}
-      ${isExec ? makeInternalRequestCell(allInternalRequests, totalRequestKey, st.totalRequestCategoriesExpanded, dateRu) : ''}
+      ${isExec ? makeInternalRequestCell(allInternalRequests, dateRu) : ''}
       ${makeDrillCell(filtered, `Все подразделения за ${dateRu}`, 'Общий итог за день', mode)}
-      ${makeDrillCell(grandNoMark, `Без метки за ${dateRu}`, 'Общий итог за день', mode)}
-      ${makeDrillCell(grandWithMarks, `Все с метками за ${dateRu}`, 'Общий итог за день', mode, 'marks-parent-cell')}
-      ${totMarkCells}
+      ${renderBreakdownCells(grandNoMark, grandWithMarks, grandByMark, `Общий итог за ${dateRu}`, '')}
     </tr>`;
 
-    if (st.totalRequestCategoriesExpanded) html += renderInternalRequestCategoryRows(allInternalRequests, 'Общий итог');
+    if (st.totalRequestThemesExpanded) html += renderInternalRequestThemeRows(allInternalRequests, 'Общий итог');
 
     if (st.totalDocTypesExpanded) {
       grandDocTypes.forEach(dt => {
@@ -2142,12 +2154,11 @@ function renderWidgetTable(mode) {
         };
         sortedMarks.forEach(m => { row[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
         expRows.push(row);
-        const markCells = st.isMarksExpanded ? sortedMarks.map(m => makeDrillCell(dt.byMark[m] || [], `Общий итог · ${dt.docType}`, `Метка: «${m}» · Дата: ${dateRu}`, mode)).join('') : '';
-        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makeAssignedCell(dt.assigned, `Все подразделения · ${dt.docType}`, 'Сейчас в работе (ASSIGNED)') : ''}${isExec ? makeAssignedCell(dt.onHold, `Все подразделения · ${dt.docType}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}${isExec ? makeInternalRequestCell(0) : ''}${makeDrillCell(dt.all, `Общий итог · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${makeDrillCell(dt.noMark, `Общий итог · ${dt.docType}`, `Без метки за ${dateRu}`, mode)}${makeDrillCell(dt.withMarks, `Общий итог · ${dt.docType}`, `Все с метками за ${dateRu}`, mode, 'marks-parent-cell')}${markCells}</tr>`;
+        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makeAssignedCell(dt.assigned, `Все подразделения · ${dt.docType}`, 'Сейчас в работе (ASSIGNED)') : ''}${isExec ? makeAssignedCell(dt.onHold, `Все подразделения · ${dt.docType}`, 'Сейчас на удержании (ON_HOLD)', 'На удержании (ON_HOLD)') : ''}${isExec ? makeInternalRequestCell(0) : ''}${makeDrillCell(dt.all, `Общий итог · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `Общий итог · ${dt.docType}`, '')}</tr>`;
       });
     }
   } else {
-    const colSpan = (isExec ? 7 : 4) + (st.isMarksExpanded ? sortedMarks.length : 0);
+    const colSpan = 1 + (isExec ? 3 : 0) + 1 + (st.isTotalsBreakdownExpanded ? 2 + (hasMarkChildren ? sortedMarks.length : 0) : 0);
     html = `<tr><td colspan="${colSpan}" style="padding:28px; color:var(--o3-text-sec);">За ${dateRu} документов по выбранным фильтрам не найдено.</td></tr>`;
   }
 
@@ -2309,24 +2320,29 @@ function bindWidgetEvents(mode) {
   initMultiSelect(`${p}WrapDocType`, 'Тип документа', 'Все типы документов', rerender);
   initMultiSelect(`${p}WrapGroup`, mode === 'registrars' ? 'Группа регистраторов' : 'Группа исполнителей', 'Все группы', rerender);
   initMultiSelect(`${p}WrapPerson`, mode === 'registrars' ? 'Регистратор' : 'Исполнитель', mode === 'registrars' ? 'Все регистраторы' : 'Все исполнители', rerender);
-  initMultiSelect(`${p}WrapQueue`, 'Очередь', 'Все очереди', rerender);
-  initMultiSelect(`${p}WrapOrigin`, 'Происхождение', 'Все происхождения', rerender);
+  initMultiSelect(`${p}WrapQueue`, 'Очередь', 'Все очереди', mode === 'executors' ? () => syncExecutorSharedFilter(`${p}WrapQueue`, 'Queue') : rerender);
+  initMultiSelect(`${p}WrapOrigin`, 'Происхождение', 'Все происхождения', mode === 'executors' ? () => syncExecutorSharedFilter(`${p}WrapOrigin`, 'Origin') : rerender);
   initMultiSelect(`${p}WrapMark`, 'Метка тикета', 'Все метки', rerender);
 
   document.getElementById(`${p}Table`).addEventListener('click', (e) => {
     if (e.target.closest('.col-resizer') || e.target.closest('[data-copy-upn]') || e.target.closest('[data-chatzone-link]')) return;
-    const requestCategories = e.target.closest('[data-request-categories]');
-    if (requestCategories) {
+    const requestThemes = e.target.closest('[data-request-themes]');
+    if (requestThemes) {
       e.stopPropagation();
-      const key = requestCategories.getAttribute('data-request-categories');
-      if (key === 'total') st.totalRequestCategoriesExpanded = !st.totalRequestCategoriesExpanded;
+      const key = requestThemes.getAttribute('data-request-themes');
+      if (key === 'total') st.totalRequestThemesExpanded = !st.totalRequestThemesExpanded;
       else if (key.startsWith('group:')) {
-        if (st.expandedGroupRequestCategories.has(key)) st.expandedGroupRequestCategories.delete(key);
-        else st.expandedGroupRequestCategories.add(key);
+        if (st.expandedGroupRequestThemes.has(key)) st.expandedGroupRequestThemes.delete(key);
+        else st.expandedGroupRequestThemes.add(key);
       } else if (key.startsWith('user:')) {
-        if (st.expandedUserRequestCategories.has(key)) st.expandedUserRequestCategories.delete(key);
-        else st.expandedUserRequestCategories.add(key);
+        if (st.expandedUserRequestThemes.has(key)) st.expandedUserRequestThemes.delete(key);
+        else st.expandedUserRequestThemes.add(key);
       }
+      renderWidgetTable(mode);
+      return;
+    }
+    if (e.target.closest('[data-toggle-breakdown]')) {
+      st.isTotalsBreakdownExpanded = !st.isTotalsBreakdownExpanded;
       renderWidgetTable(mode);
       return;
     }
@@ -2401,6 +2417,10 @@ function bindWidgetEvents(mode) {
 
   document.getElementById(`${p}BtnReset`).onclick = () => {
     ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Origin', 'Mark'].forEach(field => resetMultiSelect(`${p}Wrap${field}`));
+    if (mode === 'executors') {
+      syncExecutorSharedFilter(`${p}WrapQueue`, 'Queue', false);
+      syncExecutorSharedFilter(`${p}WrapOrigin`, 'Origin', false);
+    }
     renderWidgetTable(mode);
   };
 

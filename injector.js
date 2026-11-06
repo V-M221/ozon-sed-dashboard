@@ -392,6 +392,7 @@
         documentName: '',
         isInternalRequest: true,
         internalRequestId: String(item.id || ''),
+        themeName: item.themeName || '',
         alertType: item.alertType || null,
         alertTypeName: item.alertTypeName || '',
         internalRequestClosedAt: item.closedAt || null,
@@ -406,6 +407,7 @@
           queue: item.queue || null,
           origin: item.origin || '',
           firstOrigin: item.firstOrigin || '',
+          themeName: item.themeName || '',
           alertType: item.alertType || null,
           alertTypeName: item.alertTypeName || '',
           marks: Array.isArray(item.marks) ? item.marks : []

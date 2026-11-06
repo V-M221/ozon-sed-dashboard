@@ -534,6 +534,15 @@
     .cell-zero { color: var(--o3-text-muted); opacity: 0.45; user-select: none; }
     th.internal-request-col { background: rgba(99, 102, 241, 0.10) !important; color: #4F46E5 !important; }
     td.internal-request-cell { text-align: center; font-weight: 700; color: #4F46E5; }
+    .paired-count-cell { text-align: center; min-width: 112px; }
+    .paired-count-values { display: flex; justify-content: center; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .paired-metric { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; padding: 2px 5px; border-radius: 6px; font-size: 11px; }
+    .paired-metric.metric-document { color: #1769AA; background: rgba(23,105,170,.09); }
+    .paired-metric.metric-request { color: #6B4BC3; background: rgba(107,75,195,.10); }
+    .paired-metric.zero { font-weight: 600; opacity: .65; }
+    .paired-metric.loading { cursor: default; }
+    .op-status-skeleton { display: inline-flex; align-items: center; min-height: 16px; }
+    .op-status-skeleton .sk-inline { width: 96px; height: 12px; }
     .tree-detail-controls { float: right; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
     .tree-detail-control { border: 0; border-radius: 5px; padding: 2px 4px; background: var(--o3-blue-light); color: var(--o3-blue); font: inherit; font-size: 10px; cursor: pointer; white-space: nowrap; }
     .tree-detail-control:hover { background: var(--o3-blue); color: #fff; }

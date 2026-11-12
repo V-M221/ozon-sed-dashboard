@@ -2042,7 +2042,7 @@ function renderWidgetTable(mode) {
         С метками <span style="font-size:10.5px; font-weight:500;">${markToggleIcon}</span>
       </th>
     </tr>`;
-    if (hasMarkChildren) headerHtml += `<tr>${sortedMarks.map(m => `<th class="mark-child-col" title="Метка: ${m}">${m}</th>`).join('')}</tr>`;
+    if (hasMarkChildren) headerHtml += `<tr><th class="mark-child-col">Всего с метками</th>${sortedMarks.map(m => `<th class="mark-child-col" title="Метка: ${m}">${m}</th>`).join('')}</tr>`;
   }
   thead.innerHTML = headerHtml;
 
@@ -2095,6 +2095,7 @@ function renderWidgetTable(mode) {
         ${isExec ? makePairedStatusCell([], counts.assigned, isInternalRequestsLoading, theme, contextLabel, 'в работе (на сейчас)') : ''}
         ${isExec ? makePairedStatusCell([], counts.onHold, isInternalRequestsLoading, theme, contextLabel, 'на удержании (на сейчас)') : ''}
         ${isExec ? makePairedClosedCell([], counts.closed, isInternalRequestsLoading, theme, contextLabel, dateRu) : ''}
+        <td class="cell-zero">0</td>
         ${renderBreakdownZeros()}
       </tr>`;
     }).join('');

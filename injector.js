@@ -11,6 +11,7 @@
   const INTERNAL_REQUEST_ALERT_TYPE_ID = 2916;
   const HEARTBEAT_URL = "https://crm.bank.ozon.ru/api/heartBeat.json";
   const CONCURRENCY_LIMIT = 20;
+  const DOCUMENTS_PAGE_SIZE = 200;
 
   const ALL_SED_STATUSES = [
     "CLOSED",
@@ -310,7 +311,7 @@
   async function fetchAllByFilter(filterObj) {
     logRequestFilter('Запрос searchDocuments', filterObj);
     let cursor = null;
-    let activePerPage = 200;
+    let activePerPage = DOCUMENTS_PAGE_SIZE;
     let allDocs = [];
     let page = 0;
 
@@ -768,7 +769,7 @@
 
     let currentCursor = null;
     let pageNum = 0;
-    let activePerPage = 500;
+    let activePerPage = DOCUMENTS_PAGE_SIZE;
     let matchedDocs = [];
 
     try {
@@ -796,7 +797,7 @@
         });
 
         if (!res.ok && pageNum === 1) {
-          for (let fallbackPerPage of [200, 50]) {
+          for (let fallbackPerPage of [50]) {
             activePerPage = fallbackPerPage;
             bodyPayload.pagination.perPage = fallbackPerPage;
             res = await safeFetch(TARGET_URL, {

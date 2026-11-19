@@ -11,7 +11,8 @@
   const INTERNAL_REQUEST_ALERT_TYPE_ID = 2916;
   const HEARTBEAT_URL = "https://crm.bank.ozon.ru/api/heartBeat.json";
   const CONCURRENCY_LIMIT = 20;
-  const DOCUMENTS_PAGE_SIZE = 200;
+  const DOCUMENTS_PAGE_SIZE = 20;
+  const MAX_FILTERED_DOCUMENT_PAGES = 4000 / DOCUMENTS_PAGE_SIZE;
 
   const ALL_SED_STATUSES = [
     "CLOSED",
@@ -311,30 +312,17 @@
   async function fetchAllByFilter(filterObj) {
     logRequestFilter('Запрос searchDocuments', filterObj);
     let cursor = null;
-    let activePerPage = DOCUMENTS_PAGE_SIZE;
     let allDocs = [];
-    let page = 0;
-
-    while (page < 20) {
-      page++;
+    for (let page = 0; page < MAX_FILTERED_DOCUMENT_PAGES; page++) {
       const bodyPayload = {
-        pagination: { cursor, perPage: activePerPage },
+        pagination: { cursor, perPage: DOCUMENTS_PAGE_SIZE },
         filter: filterObj
       };
-      let res = await safeFetch(TARGET_URL, {
+      const res = await safeFetch(TARGET_URL, {
         method: 'POST',
         headers: buildCleanHeaders(true),
         body: JSON.stringify(bodyPayload)
       });
-      if (!res.ok && page === 1 && activePerPage !== 50) {
-        activePerPage = 50;
-        bodyPayload.pagination.perPage = 50;
-        res = await safeFetch(TARGET_URL, {
-          method: 'POST',
-          headers: buildCleanHeaders(true),
-          body: JSON.stringify(bodyPayload)
-        });
-      }
       if (!res.ok) break;
       const json = await res.json();
       const extracted = extractSedData(json);
@@ -769,7 +757,6 @@
 
     let currentCursor = null;
     let pageNum = 0;
-    let activePerPage = DOCUMENTS_PAGE_SIZE;
     let matchedDocs = [];
 
     try {
@@ -785,8 +772,8 @@
           }
         }, '*');
 
-        let bodyPayload = {
-          pagination: { cursor: currentCursor, perPage: activePerPage },
+        const bodyPayload = {
+          pagination: { cursor: currentCursor, perPage: DOCUMENTS_PAGE_SIZE },
           filter: exactFilter
         };
 
@@ -795,19 +782,6 @@
           headers: buildCleanHeaders(true),
           body: JSON.stringify(bodyPayload)
         });
-
-        if (!res.ok && pageNum === 1) {
-          for (let fallbackPerPage of [50]) {
-            activePerPage = fallbackPerPage;
-            bodyPayload.pagination.perPage = fallbackPerPage;
-            res = await safeFetch(TARGET_URL, {
-              method: 'POST',
-              headers: buildCleanHeaders(true),
-              body: JSON.stringify(bodyPayload)
-            });
-            if (res.ok) break;
-          }
-        }
 
         if (!res.ok && pageNum === 1 && activeMode === 'registrars') {
           delete exactFilter.statusIn;

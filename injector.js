@@ -323,7 +323,7 @@
         headers: buildCleanHeaders(true),
         body: JSON.stringify(bodyPayload)
       });
-      if (!res.ok) break;
+      if (!res.ok) throw new Error(`Не удалось загрузить документы: HTTP ${res.status}`);
       const json = await res.json();
       const extracted = extractSedData(json);
       if (!extracted || extracted.items.length === 0) break;
@@ -341,13 +341,12 @@
     return allDocs;
   }
 
-  async function fetchInternalRequestsByFilter(filter, label) {
+  async function fetchInternalRequestPages(filter, label, perPage) {
     logRequestFilter(label, filter);
-    const perPage = 100;
     const allItems = [];
     let page = 1;
     let totalPages = 1;
-    while (page <= totalPages && page <= 100) {
+    while (page <= totalPages) {
       const params = new URLSearchParams({
         page: String(page),
         perPage: String(perPage),
@@ -371,6 +370,32 @@
       if (items.length === 0) break;
     }
 
+    return allItems;
+  }
+
+  async function fetchInternalRequestsByFilter(filter, label) {
+    const sources = await Promise.allSettled([
+      fetchInternalRequestPages({ ...filter, alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID }, label + ' · тип 2916', 100),
+      fetchInternalRequestPages({ ...filter, originIn: ['CHANNEL_INTERNAL_REQUEST'], branchIn: ['SED'] }, label + ' · ветка СЭД', 40)
+    ]);
+    const byId = new Map();
+    const errors = [];
+    for (const [index, source] of sources.entries()) {
+      if (source.status === 'rejected') {
+        errors.push(label + ' (' + (index === 0 ? 'тип 2916' : 'ветка СЭД') + '): ' + source.reason.message);
+        continue;
+      }
+      for (const item of source.value) {
+        if (item.id == null || String(item.id).trim() === '') continue;
+        const key = String(item.id).trim();
+        const previous = byId.get(key);
+        const timestamp = Date.parse(item.statusUpdatedAt || item.closedAt) || 0;
+        if (!previous || timestamp > (Date.parse(previous.statusUpdatedAt || previous.closedAt) || 0)) {
+          byId.set(key, item);
+        }
+      }
+    }
+    const allItems = Array.from(byId.values());
     const operatorInfoByKey = new Map();
     const uniqueOperators = new Map();
     allItems.forEach(item => {
@@ -383,16 +408,20 @@
       operatorInfoByKey.set(key, await getOperatorDetails(operator.upn, operator.id));
     }));
 
-    return allItems.map(item => {
+    const requests = allItems.map(item => {
       const upn = String(item.operatorUpn || '').trim();
       const key = upn.toLowerCase() || `id:${item.operatorID || 'unassigned'}`;
+      const category = item.category || item.theme?.category || item.alertCategory || item.alertType?.category;
+      const categoryName = item.categoryName || item.theme?.categoryName || item.alertCategoryName ||
+        (typeof category === 'string' ? category : category?.name || category?.categoryName) || '';
       const operatorInfo = operatorInfoByKey.get(key) || { operatorId: item.operatorID || null, fullName: '', groupName: 'Без группы', currentStatus: 'UNKNOWN_STATUS', statusSetAt: null };
       return {
         id: String(item.id || ''),
         documentName: '',
         isInternalRequest: true,
         internalRequestId: String(item.id || ''),
-        themeName: item.themeName || (item.theme && item.theme.themeName) || '',
+        categoryName,
+        themeName: item.themeName || item.theme?.themeName || item.theme?.name || '',
         alertType: item.alertType || null,
         alertTypeName: item.alertTypeName || '',
         internalRequestClosedAt: item.closedAt || null,
@@ -407,7 +436,7 @@
           queue: item.queue || null,
           origin: item.origin || '',
           firstOrigin: item.firstOrigin || '',
-          themeName: item.themeName || (item.theme && item.theme.themeName) || '',
+          themeName: item.themeName || item.theme?.themeName || item.theme?.name || '',
           alertType: item.alertType || null,
           alertTypeName: item.alertTypeName || '',
           marks: Array.isArray(item.marks) ? item.marks : []
@@ -415,6 +444,7 @@
         ticketMarks: []
       };
     });
+    return { requests, errors };
   }
 
   async function fetchClosedInternalRequestsByDate(targetDateYMD) {
@@ -423,8 +453,7 @@
       createdFrom: '2026-01-01T00:00:00+03:00',
       createdTo: '2027-12-31T23:59:59+03:00',
       closedAtFrom: `${targetDateYMD}T00:00:00+03:00`,
-      closedAtTo: `${targetDateYMD}T23:59:59+03:00`,
-      alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID
+      closedAtTo: `${targetDateYMD}T23:59:59+03:00`
     };
     return fetchInternalRequestsByFilter(filter, 'Запрос закрытых внутренних запросов');
   }
@@ -433,30 +462,26 @@
     const filter = {
       alertStatusIn: ['ASSIGNED', 'ON_HOLD'],
       createdFrom: '2026-01-01T00:00:00+03:00',
-      createdTo: '2027-12-31T23:59:59+03:00',
-      alertTypeIdIn: INTERNAL_REQUEST_ALERT_TYPE_ID
+      createdTo: '2027-12-31T23:59:59+03:00'
     };
     return fetchInternalRequestsByFilter(filter, 'Запрос внутренних запросов в работе и на удержании');
   }
 
   async function fetchInternalRequestsAndPost(targetClosedYMD) {
-    const [closedInternalRequests, activeInternalRequests] = await Promise.all([
-      fetchClosedInternalRequestsByDate(targetClosedYMD).catch(e => {
-        sendLog('error', `Не удалось загрузить закрытые внутренние запросы: ${e.message}`);
-        return [];
-      }),
-      fetchActiveInternalRequests().catch(e => {
-        sendLog('error', `Не удалось загрузить активные внутренние запросы: ${e.message}`);
-        return [];
-      })
+    const [closed, active] = await Promise.all([
+      fetchClosedInternalRequestsByDate(targetClosedYMD),
+      fetchActiveInternalRequests()
     ]);
+    const closedInternalRequests = closed.requests;
+    const activeInternalRequests = active.requests;
+    const error = [...closed.errors, ...active.errors].join(' · ');
     const internalRequestsInWork = activeInternalRequests.filter(item => item.ticket.status === 'ASSIGNED');
     const internalRequestsOnHold = activeInternalRequests.filter(item => item.ticket.status === 'ON_HOLD');
-    sendLog('success', `Внутренние запросы загружены отдельно: в работе = ${internalRequestsInWork.length}, на удержании = ${internalRequestsOnHold.length}, закрыто за ${targetClosedYMD} = ${closedInternalRequests.length}.`);
+    sendLog(error ? 'warn' : 'success', `Внутренние запросы: в работе = ${internalRequestsInWork.length}, на удержании = ${internalRequestsOnHold.length}, закрыто за ${targetClosedYMD} = ${closedInternalRequests.length}.`);
     window.postMessage({
       source: 'CRM_INJECTOR',
       type: 'INTERNAL_REQUESTS_RESULT',
-      payload: { closedInternalRequests, internalRequestsInWork, internalRequestsOnHold }
+      payload: { closedInternalRequests, internalRequestsInWork, internalRequestsOnHold, error }
     }, '*');
   }
 
@@ -588,12 +613,9 @@
   }
 
   // === ОТДЕЛЬНЫЙ ПЕРЕЗАПРОС ДОКУМЕНТОВ ПО ВЫБРАННОЙ ДАТЕ ИСТЕЧЕНИЯ СРОКА ===
-  async function fetchSingleDueDateDocs(dueDateYMD) {
+  async function fetchSingleDueDateDocs(dueDateYMD, requestId) {
     try {
-      const targetDueYMD = dueDateYMD || (() => {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      })();
+      const targetDueYMD = dueDateYMD || new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
 
       const dueDateFilter = {
         statusIn: OPEN_SED_STATUSES,
@@ -611,7 +633,7 @@
         source: 'CRM_INJECTOR',
         type: 'DUE_DATE_RESULT',
         payload: {
-          dueDateYMD: targetDueYMD,
+          requestId, dueDateYMD: targetDueYMD,
           dueTodayDocs
         }
       }, '*');
@@ -621,7 +643,7 @@
         source: 'CRM_INJECTOR',
         type: 'DUE_DATE_RESULT',
         payload: {
-          dueDateYMD,
+          requestId, dueDateYMD, error: e.message,
           dueTodayDocs: []
         }
       }, '*');
@@ -629,14 +651,13 @@
   }
 
   // === СБОР ДЕДЛАЙНОВ + ВСЕХ ДОКУМЕНТОВ В РАБОТЕ (ASSIGNED) ===
-  async function fetchDeadlinesAndAssignedAlerts(customDueDateYMD = null, closedDateYMD = null) {
+  async function fetchDeadlinesAndAssignedAlerts(customDueDateYMD = null, closedDateYMD = null, deadlineBatchId) {
     try {
-      const now = new Date();
-      const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      const yesterdayYMD = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+      const now = Date.now();
+      const day = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow' });
+      const todayYMD = day.format(now);
+      const yesterdayYMD = day.format(now - 86400000);
       const targetDueYMD = customDueDateYMD || todayYMD;
-      const targetClosedYMD = closedDateYMD || targetDueYMD;
 
       // 1) Просроченные (до конца вчерашнего дня)
       const overdueFilter = {
@@ -684,7 +705,7 @@
         source: 'CRM_INJECTOR',
         type: 'DEADLINES_RESULT',
         payload: {
-          todayYMD: targetDueYMD,
+          deadlineBatchId, todayYMD: targetDueYMD,
           yesterdayYMD,
           overdueDocs,
           dueTodayDocs,
@@ -692,20 +713,22 @@
           onHoldDocs
         }
       }, '*');
-      fetchInternalRequestsAndPost(targetClosedYMD).catch(e => {
-        sendLog('error', `Ошибка отдельной загрузки внутренних запросов: ${e.message}`);
-        window.postMessage({
-          source: 'CRM_INJECTOR',
-          type: 'INTERNAL_REQUESTS_RESULT',
-          payload: { closedInternalRequests: [], internalRequestsInWork: [], internalRequestsOnHold: [], error: e.message }
-        }, '*');
-      });
     } catch (e) {
+      window.postMessage({ source: 'CRM_INJECTOR', type: 'DEADLINES_RESULT', payload: { deadlineBatchId, error: e.message } }, '*');
       sendLog('warn', `Предупреждение при загрузке доп. данных: ${e.message}`);
     }
+
+    fetchInternalRequestsAndPost(closedDateYMD || customDueDateYMD || new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })).catch(e => {
+      sendLog('error', `Ошибка отдельной загрузки внутренних запросов: ${e.message}`);
+      window.postMessage({
+        source: 'CRM_INJECTOR',
+        type: 'INTERNAL_REQUESTS_RESULT',
+        payload: { closedInternalRequests: [], internalRequestsInWork: [], internalRequestsOnHold: [], error: e.message }
+      }, '*');
+    });
   }
 
-  async function liveFetchByDate(targetDateYMD, mode, customDueDateYMD = null) {
+  async function liveFetchByDate(targetDateYMD, mode, customDueDateYMD = null, deadlineBatchId) {
     isLiveFetching = false;
     await new Promise(r => setTimeout(r, 60));
     isLiveFetching = true;
@@ -844,7 +867,7 @@
         }, '*');
 
         if (activeMode === 'executors') {
-          await fetchDeadlinesAndAssignedAlerts(customDueDateYMD, targetDateYMD);
+          await fetchDeadlinesAndAssignedAlerts(customDueDateYMD, targetDateYMD, deadlineBatchId);
         }
       }
     } catch (err) {
@@ -852,7 +875,7 @@
       window.postMessage({
         source: 'CRM_INJECTOR',
         type: 'LIVE_ERROR',
-        payload: { mode: activeMode, message: err.message }
+        payload: { mode: activeMode, deadlineBatchId, message: err.message }
       }, '*');
     } finally {
       isLiveFetching = false;
@@ -867,11 +890,11 @@
 
     if (event.data.type === 'FETCH_DATE') {
       const p = event.data.payload || {};
-      liveFetchByDate(p.dateYMD, p.mode, p.dueDateYMD);
+      liveFetchByDate(p.dateYMD, p.mode, p.dueDateYMD, p.deadlineBatchId);
     }
     if (event.data.type === 'FETCH_DUE_DATE') {
       const p = event.data.payload || {};
-      fetchSingleDueDateDocs(p.dueDateYMD);
+      fetchSingleDueDateDocs(p.dueDateYMD, p.requestId);
     }
     if (event.data.type === 'STOP_FETCH') {
       sendLog('warn', 'Запрос остановлен пользователем.');

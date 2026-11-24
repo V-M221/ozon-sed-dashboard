@@ -77,7 +77,7 @@
           fullName: i % 2 === 0 ? 'ФНС России (Межрегиональная инспекция)' : 'Банк России (Департамент надзора)'
         },
         ticket: {
-          id: 90000 + i + (status === 'CLOSED' ? 0 : status === 'ASSIGNED' ? 1000 : 2000),
+          id: 90000 + i + (status === 'CLOSED' ? 0 : status === 'ASSIGNED' ? 1000 : status === 'CREATED' ? 2000 : Number(baseDate.replace(/-/g, '')) * 100),
           status,
           closedAt: status === 'CLOSED' ? isoAt : null,
           creator: creator.upn,
@@ -106,6 +106,19 @@
       });
     }
     return docs;
+  }
+
+  function buildInternalRequests(day, count, status, firstId) {
+    return buildSampleDocs(day, count, status).map((doc, index) => {
+      const id = firstId + index;
+      return {
+        ...doc, id: String(id), isInternalRequest: true, internalRequestId: String(id),
+        categoryName: ['Документооборот', 'Обращения', 'Обращения'][index % 3],
+        documentName: '', themeName: ['Согласование', 'Регистрация'][index % 2],
+        internalRequestClosedAt: doc.ticket.closedAt,
+        ticket: { ...doc.ticket, id, origin: 'CHANNEL_INTERNAL_REQUEST' }
+      };
+    });
   }
 
   let cachedOverdue = null;
@@ -145,7 +158,7 @@
       });
 
       if (mode === 'executors') {
-        const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const yest = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
         cachedOverdue = cachedOverdue || buildSampleDocs(yest, 6, 'CREATED', yest);
         cachedDueToday = buildSampleDocs(dueDateYMD, 8, 'ACKNOWLEDGED', dueDateYMD);
         cachedAssigned = cachedAssigned || buildSampleDocs(dateYMD, 9, 'ASSIGNED', dueDateYMD);
@@ -153,11 +166,20 @@
         emitRuntimeMessage({
           type: 'DEADLINES_RESULT',
           payload: {
-            todayYMD: dueDateYMD,
+            deadlineBatchId: payload.deadlineBatchId, todayYMD: dueDateYMD,
             yesterdayYMD: yest,
             overdueDocs: cachedOverdue,
             dueTodayDocs: cachedDueToday,
             assignedDocs: cachedAssigned
+          }
+        });
+        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
+        emitRuntimeMessage({
+          type: 'INTERNAL_REQUESTS_RESULT',
+          payload: {
+            closedInternalRequests: buildInternalRequests(dateYMD, 4, 'CLOSED', 95000),
+            internalRequestsInWork: buildInternalRequests(today, 3, 'ASSIGNED', 95100),
+            internalRequestsOnHold: buildInternalRequests(today, 2, 'ON_HOLD', 95200)
           }
         });
       }
@@ -166,11 +188,11 @@
 
     if (type === 'FETCH_DUE_DATE') {
       const dueDateYMD = payload.dueDateYMD || new Date().toISOString().slice(0, 10);
-      cachedDueToday = buildSampleDocs(dueDateYMD, 7, 'ACKNOWLEDGED', dueDateYMD);
+      cachedDueToday = buildSampleDocs(dueDateYMD, 8, 'ACKNOWLEDGED', dueDateYMD);
       emitRuntimeMessage({
         type: 'DUE_DATE_RESULT',
         payload: {
-          dueDateYMD,
+          requestId: payload.requestId, dueDateYMD,
           dueTodayDocs: cachedDueToday
         }
       });
@@ -234,7 +256,7 @@
 
   window.chrome = {
     runtime: {
-      getManifest: () => ({ version: '3.0', name: 'Ozon Банк · СЭД Онлайн-Дашборд' }),
+      getManifest: () => ({ version: '3.1.14', name: 'Ozon Банк · СЭД Онлайн-Дашборд' }),
       getURL: (path) => path,
       reload: () => window.location.reload(),
       onMessage: {

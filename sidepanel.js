@@ -26,10 +26,7 @@ let deadlinePeriod = 'overdue';
 let targetDueYMD = '';
 let loadedDueYMD = '';
 let activeDueRequest = '';
-let activeDeadlineBatch = '';
-let isDeadlinesLoading = false;
-let isDueDateSingleLoading = false;
-let batchError = '';
+let loadedOverdueYMD = '';
 let dueDateError = '';
 
 const ASSIGN_STATE = {
@@ -455,6 +452,7 @@ function closeAllMultiSelects() {
 
 function setFiltersSkeleton(prefix, show) {
   const fields = ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Origin', 'Mark'];
+  if (prefix === 'rg') fields.push('Result');
   fields.forEach(f => {
     const containerId = `${prefix}Wrap${f}`;
     const el = document.getElementById(containerId);
@@ -530,15 +528,15 @@ document.getElementById('btnCopyLogs').onclick = (e) => {
 const STATE = {
   executors: {
     prefix: 'ex', mode: 'executors', roleTitle: 'Исполнитель', dateColName: 'Дата_Закрытия',
-    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
+    docs: [], fetchedAt: null, groupsExpandedByDefault: false, groupExpansion: new Map(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
     expandedGroupRequestThemes: new Set(), expandedUserRequestThemes: new Set(), totalRequestThemesExpanded: false,
-    allUsersExpanded: false, isTotalsBreakdownExpanded: false, isMarksExpanded: false, lastExportRows: [], hasLoadedOnce: false
+    allUsersExpanded: false, isTotalsBreakdownExpanded: false, isMarksExpanded: false, lastExportRows: [], hasLoadedOnce: false, loading: false, requestId: null
   },
   registrars: {
     prefix: 'rg', mode: 'registrars', roleTitle: 'Регистратор', dateColName: 'Дата_Создания',
-    docs: [], fetchedAt: null, collapsedGroups: new Set(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
+    docs: [], fetchedAt: null, groupsExpandedByDefault: false, groupExpansion: new Map(), expandedUsers: new Set(), expandedGroupDocTypes: new Set(), totalDocTypesExpanded: false,
     expandedGroupRequestThemes: new Set(), expandedUserRequestThemes: new Set(), totalRequestThemesExpanded: false,
-    allUsersExpanded: false, isTotalsBreakdownExpanded: false, isMarksExpanded: false, lastExportRows: [], hasLoadedOnce: false
+    allUsersExpanded: false, isTotalsBreakdownExpanded: false, isMarksExpanded: false, lastExportRows: [], hasLoadedOnce: false, loading: false, requestId: null
   }
 };
 
@@ -681,6 +679,21 @@ function getPersonStatusInfoByMode(d, mode) {
   return { status: info.currentStatus || 'UNKNOWN_STATUS', setAt: info.statusSetAt || null, loading: !!info.statusLoading };
 }
 
+function getDocumentResult(d) {
+  return d.resultUnavailable ? 'Не удалось загрузить' : (d.resultName || d.ticket?.result?.name?.trim() || 'Без результата');
+}
+
+function getInternalRequestId(d) {
+  return d.internalRequestId || d.ticket?.id || d.id;
+}
+
+function getCrmRecordUrl(d) {
+  if (d.isInternalRequest) {
+    return `${CRM_BASE_URL}/statistics/tickets?alertIdIn=${encodeURIComponent(getInternalRequestId(d))}&created=lastMonth%2CtodayEnd`;
+  }
+  return `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
+}
+
 function getDocType(d) { return d.documentTypeName || 'Не указан'; }
 function getQueueName(d) { return (d.ticket && d.ticket.queue && d.ticket.queue.name) || 'Без очереди'; }
 function getMarksArray(d) { return (Array.isArray(d.ticketMarks) ? d.ticketMarks : []).map(m => m && m.name).filter(Boolean); }
@@ -738,16 +751,10 @@ async function fetchWidgetData(mode) {
   const dateYMD = document.getElementById(`${p}Date`).value;
   if (!dateYMD) return;
 
-  const deadlineBatchId = mode === 'executors' ? crypto.randomUUID() : '';
-  const dueDateYMD = getDeadlineDate() || moscowDate();
+  const requestId = crypto.randomUUID();
+  st.requestId = requestId;
+  st.loading = true;
   if (mode === 'executors') {
-    activeDeadlineBatch = deadlineBatchId;
-    activeDueRequest = '';
-    isDeadlinesLoading = true;
-    isDueDateSingleLoading = false;
-    targetDueYMD = getDeadlineDate();
-    batchError = '';
-    dueDateError = '';
     isInternalRequestsLoading = true;
     rawClosedInternalRequestDocs = [];
     rawInternalRequestsInWork = [];
@@ -762,11 +769,9 @@ async function fetchWidgetData(mode) {
 
   const tab = await findSedTab();
   if (!tab) {
-    if (mode === 'executors' && deadlineBatchId === activeDeadlineBatch) {
-      isDeadlinesLoading = false;
-      batchError = 'Не удалось загрузить документы из СЭД.';
-      renderDeadlinePanel();
-    }
+    if (requestId !== st.requestId) return;
+    st.loading = false;
+    if (mode === 'executors') isInternalRequestsLoading = false;
     showSkeleton(p, false);
     const msg = 'Не найдена открытая вкладка https://crm.bank.ozon.ru/! Откройте СЭД в браузере и нажмите «Обновить».';
     setProgress(p, true, msg);
@@ -778,14 +783,12 @@ async function fetchWidgetData(mode) {
     await ensureConnectionAndSend(tab.id, {
       target: 'INJECTOR',
       type: 'FETCH_DATE',
-      payload: { dateYMD, mode, dueDateYMD, deadlineBatchId }
+      payload: { dateYMD, mode, requestId }
     });
   } catch (e) {
-    if (mode === 'executors' && deadlineBatchId === activeDeadlineBatch) {
-      isDeadlinesLoading = false;
-      batchError = 'Не удалось загрузить документы из СЭД.';
-      renderDeadlinePanel();
-    }
+    if (requestId !== st.requestId) return;
+    st.loading = false;
+    if (mode === 'executors') isInternalRequestsLoading = false;
     showSkeleton(p, false);
     setProgress(p, true, 'Ошибка связи со вкладкой СЭД: ' + e.message);
     addLog('error', 'Ошибка при отправке команды FETCH_DATE', e.stack || e.message);
@@ -838,41 +841,44 @@ function moscowDate(dayOffset = 0) {
 
 function getDeadlineDate() {
   if (deadlinePeriod === 'custom') return document.getElementById('dueTargetDate').value;
-  return moscowDate(deadlinePeriod === 'tomorrow' ? 1 : 0);
+  return moscowDate(deadlinePeriod === 'overdue' ? -1 : deadlinePeriod === 'tomorrow' ? 1 : 0);
 }
 
-async function changeDeadlinePeriod(period) {
+async function changeDeadlinePeriod(period, force = false) {
+  const previousPeriod = deadlinePeriod;
   deadlinePeriod = period;
-  ASSIGN_STATE.Deadline.selectedAlertIds.clear();
+  const date = getDeadlineDate();
+  const sameView = previousPeriod === period && date === targetDueYMD;
+  if (sameView && activeDueRequest && !force) return;
+  if (!sameView) ASSIGN_STATE.Deadline.selectedAlertIds.clear();
   const dateInput = document.getElementById('dueTargetDate');
   dateInput.hidden = period !== 'custom';
   document.querySelectorAll('[data-period]').forEach(btn => {
     btn.setAttribute('aria-pressed', String(btn.dataset.period === period));
   });
-  const date = getDeadlineDate();
   targetDueYMD = date;
   activeDueRequest = '';
-  isDueDateSingleLoading = false;
+  const cached = period === 'overdue' ? loadedOverdueYMD : loadedDueYMD;
+  const retry = Boolean(dueDateError);
   dueDateError = '';
-  if (period === 'overdue' || !date || (date === loadedDueYMD && !batchError && !isDeadlinesLoading)) {
+  if (!date || (!force && !retry && date === cached)) {
     renderDeadlinePanel();
     return;
   }
 
   const requestId = crypto.randomUUID();
   activeDueRequest = requestId;
-  isDueDateSingleLoading = true;
   renderDeadlinePanel();
   try {
     const tab = await findSedTab();
     if (!tab) throw new Error('Откройте вкладку СЭД.');
     if (requestId !== activeDueRequest) return;
     await ensureConnectionAndSend(tab.id, {
-      target: 'INJECTOR', type: 'FETCH_DUE_DATE', payload: { dueDateYMD: date, requestId }
+      target: 'INJECTOR', type: 'FETCH_DUE_DATE', payload: { dueDateYMD: date, overdue: period === 'overdue', requestId }
     });
   } catch (err) {
     if (requestId !== activeDueRequest) return;
-    isDueDateSingleLoading = false;
+    activeDueRequest = '';
     dueDateError = err.message;
     renderDeadlinePanel();
   }
@@ -964,7 +970,7 @@ function renderDeadlineCardsList(docs, section) {
     const isChecked = st && alertId && st.selectedAlertIds.has(alertId);
     const corr = d.correspondent || {};
     const docTitle = d.documentName || d.id;
-    const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
+    const docUrl = getCrmRecordUrl(d);
     const marksHtml = getMarksArray(d).map(m => `<span class="mark-pill">${m}</span>`).join('');
 
     const creatorActions = buildPersonActionButtonsHtml(getCreatorUpn(d));
@@ -999,10 +1005,10 @@ function renderDeadlineCardsList(docs, section) {
 
 function renderDeadlinePanel() {
   const overdue = deadlinePeriod === 'overdue';
-  const waiting = overdue ? isDeadlinesLoading : isDueDateSingleLoading || (isDeadlinesLoading && !activeDueRequest);
-  const error = overdue ? batchError : dueDateError || (!activeDueRequest && batchError);
-  const needsDate = !overdue && !targetDueYMD;
-  const ready = !waiting && !error && !needsDate && (overdue || loadedDueYMD === targetDueYMD);
+  const waiting = Boolean(activeDueRequest);
+  const error = dueDateError;
+  const needsDate = !targetDueYMD;
+  const ready = !waiting && !error && !needsDate && (overdue ? loadedOverdueYMD : loadedDueYMD) === targetDueYMD;
   filteredDeadlineDocs = ready ? filterAlertDocsByExecutorsUI(overdue ? rawOverdueDocs : rawDatedDocs) : [];
   const scope = document.querySelector('[data-period][aria-pressed="true"]').textContent;
   document.getElementById('deadlineSummaryScope').textContent = deadlinePeriod === 'custom' && targetDueYMD ? formatYMDToRu(targetDueYMD) : scope;
@@ -1220,7 +1226,7 @@ function buildQueueMessagesList() {
     const lines = q.docs.map(d => {
       const docNum = d.documentName || d.id;
       const docType = getDocType(d);
-      const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
+      const docUrl = getCrmRecordUrl(d);
       const docMarkdownLink = `[${docNum}](${docUrl})`;
       const deadlineDate = formatDateOnlyRu(d.deadline);
       const execTag = upnToTag(getOperatorUpn(d));
@@ -1655,12 +1661,15 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'LIVE_PROGRESS') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
+    if (msg.payload.requestId !== STATE[mode].requestId) return;
     setProgress(STATE[mode].prefix, true, msg.payload.text);
     return;
   }
   if (msg.type === 'LIVE_RESULT') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
     const st = STATE[mode];
+    if (msg.payload.requestId !== st.requestId) return;
+    st.loading = false;
     st.docs = msg.payload.items || [];
     st.fetchedAt = msg.payload.fetchedAt || new Date().toISOString();
     st.hasLoadedOnce = true;
@@ -1674,18 +1683,11 @@ chrome.runtime.onMessage.addListener((msg) => {
     requestOperatorStatuses(mode);
     return;
   }
-  if (msg.type === 'DEADLINES_RESULT' && msg.payload) {
-    if (msg.payload.deadlineBatchId !== activeDeadlineBatch) return;
-    isDeadlinesLoading = false;
-    batchError = msg.payload.error || '';
-    if (batchError) {
-      renderDeadlinePanel();
+  if (msg.type === 'EXECUTOR_WORKLOAD_RESULT' && msg.payload) {
+    if (msg.payload.requestId !== STATE.executors.requestId) return;
+    if (msg.payload.error) {
+      setProgress('ex', true, 'Не удалось загрузить документы в работе и на удержании: ' + msg.payload.error);
       return;
-    }
-    rawOverdueDocs = msg.payload.overdueDocs || [];
-    if (!activeDueRequest && msg.payload.todayYMD === targetDueYMD) {
-      rawDatedDocs = msg.payload.dueTodayDocs || [];
-      loadedDueYMD = msg.payload.todayYMD;
     }
     rawAssignedDocs = msg.payload.assignedDocs || [];
     rawHoldDocs = msg.payload.onHoldDocs || [];
@@ -1696,6 +1698,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg.type === 'INTERNAL_REQUESTS_RESULT' && msg.payload) {
+    if (msg.payload.requestId !== STATE.executors.requestId) return;
     isInternalRequestsLoading = false;
     rawClosedInternalRequestDocs = msg.payload.closedInternalRequests || [];
     rawInternalRequestsInWork = msg.payload.internalRequestsInWork || [];
@@ -1730,10 +1733,15 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'DUE_DATE_RESULT' && msg.payload) {
     if (!activeDueRequest || msg.payload.requestId !== activeDueRequest || msg.payload.dueDateYMD !== targetDueYMD) return;
-    isDueDateSingleLoading = false;
+    activeDueRequest = '';
     dueDateError = msg.payload.error || '';
-    loadedDueYMD = dueDateError ? '' : msg.payload.dueDateYMD;
-    rawDatedDocs = msg.payload.dueTodayDocs || [];
+    if (deadlinePeriod === 'overdue') {
+      loadedOverdueYMD = dueDateError ? '' : targetDueYMD;
+      rawOverdueDocs = msg.payload.dueTodayDocs || [];
+    } else {
+      loadedDueYMD = dueDateError ? '' : targetDueYMD;
+      rawDatedDocs = msg.payload.dueTodayDocs || [];
+    }
     populateDropdowns('executors');
     populateDeadlineFilterOptions();
     renderDeadlinePanel();
@@ -1783,11 +1791,9 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'LIVE_ERROR') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
-    if (mode === 'executors' && msg.payload.deadlineBatchId === activeDeadlineBatch) {
-      isDeadlinesLoading = false;
-      batchError = msg.payload.message || 'Не удалось загрузить документы из СЭД.';
-      renderDeadlinePanel();
-    }
+    if (msg.payload.requestId !== STATE[mode].requestId) return;
+    STATE[mode].loading = false;
+    if (mode === 'executors') isInternalRequestsLoading = false;
     const p = STATE[mode].prefix;
     showSkeleton(p, false);
     const errText = msg.payload.message || String(msg.payload);
@@ -1815,6 +1821,10 @@ function populateDropdowns(mode) {
     origins.add(getOrigin(d));
   });
 
+  if (mode === 'registrars') {
+    const results = [...new Set(st.docs.map(getDocumentResult))].sort((a, b) => a.localeCompare(b, 'ru'));
+    setMultiSelectOptions('rgWrapResult', results);
+  }
   setMultiSelectOptions(`${p}WrapEntity`, Array.from(entities).sort());
   setMultiSelectOptions(`${p}WrapHeading`, ['INCOMING', 'OUTGOING'], { 'INCOMING': 'Входящие (INCOMING)', 'OUTGOING': 'Исходящие (OUTGOING)' });
   setMultiSelectOptions(`${p}WrapDocType`, Array.from(docTypes).sort());
@@ -1840,7 +1850,7 @@ function makePairedMetricValue(docsArr, title, sub, kind, shortLabel, tooltipLab
   const key = `as_${++cellSeq}`;
   drillStore.set(key, { docs: docsArr, title, sub, mode: 'executors' });
   if (tooltipLabel) assignedTooltipStore.set(key, { docs: docsArr, label: tooltipLabel });
-  return `<span class="cell-btn paired-metric ${kind}" data-drill="${key}" ${tooltipLabel ? `data-assigned-tip="${key}"` : ''}>${cnt} ${shortLabel}</span>`;
+  return `<button type="button" class="cell-btn paired-metric ${kind}" data-drill="${key}" ${tooltipLabel ? `data-assigned-tip="${key}"` : ''}>${cnt} ${shortLabel}</button>`;
 }
 
 function makePairedStatusCell(documentItems, requestItems, loadingRequests, title, sub, statusLabel) {
@@ -1861,6 +1871,15 @@ function makePairedClosedCell(documentItems, requestItems, loadingRequests, titl
     ${makePairedMetricValue(documentItems, title, `${sub} · документы за ${dateRu}`, 'metric-document', 'док.')}
     ${requestValue}
   </div></td>`;
+}
+
+function isGroupExpanded(state, name) {
+  return state.groupExpansion.get(name) ?? state.groupsExpandedByDefault;
+}
+
+function setAllGroupsExpanded(state, expanded) {
+  state.groupsExpandedByDefault = expanded;
+  state.groupExpansion.clear();
 }
 
 function renderWidgetTable(mode) {
@@ -1885,7 +1904,9 @@ function renderWidgetTable(mode) {
   const selOrigins = getMultiSelectValues(`${p}WrapOrigin`);
   const selMarks = getMultiSelectValues(`${p}WrapMark`);
 
+  const selectedResults = isExec ? null : getMultiSelectValues('rgWrapResult');
   const matchesActiveFilters = (d) => {
+    if (selectedResults?.size && !selectedResults.has(getDocumentResult(d))) return false;
     if (selEntities.size > 0 && !selEntities.has(getLegalEntity(d))) return false;
     if (selHeadings.size > 0 && !selHeadings.has(d.heading || '')) return false;
     if (selDocTypes.size > 0 && !selDocTypes.has(getDocType(d))) return false;
@@ -2073,8 +2094,9 @@ function renderWidgetTable(mode) {
 
   function detailStatusCells(assigned, onHold, closed, title, subtitle, unit) {
     if (!isExec) return '';
-    const kind = 'detail-metric';
-    const name = unit === 'док.' ? 'Документы' : 'Запросы';
+    const isDocument = unit === 'док.';
+    const kind = isDocument ? 'metric-document' : 'metric-request';
+    const name = isDocument ? 'Документы' : 'Запросы';
     return `<td>${makePairedMetricValue(assigned, title, subtitle, kind, unit, name + ' в работе')}</td>
       <td>${makePairedMetricValue(onHold, title, subtitle, kind, unit, name + ' на удержании')}</td>
       <td>${makePairedMetricValue(closed, title, subtitle + ' · закрыто за ' + dateRu, kind, unit)}</td>`;
@@ -2134,7 +2156,7 @@ function renderWidgetTable(mode) {
   const allInternalRequests = [...filteredInternalRequests, ...filteredInternalRequestsInWork, ...filteredInternalRequestsOnHold];
 
   sortedGroups.forEach(g => {
-    const isCol = st.collapsedGroups.has(g.groupName);
+    const isCol = !isGroupExpanded(st, g.groupName);
     const sortedUsers = Array.from(g.users.values()).sort((a, b) =>
       (b.all.length + b.assigned.length + b.onHold.length + b.internalRequests.length + b.internalRequestsInWork.length + b.internalRequestsOnHold.length) -
       (a.all.length + a.assigned.length + a.onHold.length + a.internalRequests.length + a.internalRequestsInWork.length + a.internalRequestsOnHold.length)
@@ -2206,11 +2228,11 @@ function renderWidgetTable(mode) {
 
         const personDisplayHtml = u.person === 'Не назначен'
           ? `<span style="color:var(--o3-red); font-weight:700;">Не назначен</span>`
-          : u.person;
+          : escapeHtml(u.person);
 
         html += `<tr class="operator-row">
           <td class="sticky-col" data-usr="${escapeHtml(userKey)}" title="Развернуть детализацию сотрудника">
-            <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp || isUserRequestsExpanded ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}${detailControls('data-usr-types', userKey, isUserExp, userRequestKey, isUserRequestsExpanded)}
+            <span class="operator-line"><span class="operator-arrow" aria-hidden="true">${isUserExp || isUserRequestsExpanded ? '▼' : '▶'}</span><span class="operator-name" title="${escapeHtml(u.person)}">${personDisplayHtml}</span>${statusRender.html}${actionsHtml}${detailControls('data-usr-types', userKey, isUserExp, userRequestKey, isUserRequestsExpanded)}</span>
           </td>
       ${isExec ? makePairedStatusCell(u.assigned, u.internalRequestsInWork, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, 'в работе (на сейчас)') : ''}
       ${isExec ? makePairedStatusCell(u.onHold, u.internalRequestsOnHold, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, 'на удержании (на сейчас)') : ''}
@@ -2388,8 +2410,9 @@ function renderDrawerList(q) {
   listEl.innerHTML = sortedMatched.map(d => {
     const t = d.ticket || {};
     const corr = d.correspondent || {};
-    const docTitle = d.documentName || d.id;
-    const docUrl = `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`;
+    const docTitle = d.isInternalRequest ? `Запрос №${getInternalRequestId(d)}` : d.documentName || d.id;
+    const linkTitle = d.isInternalRequest ? 'Открыть внутренний запрос в CRM' : 'Открыть карточку документа в СЭД';
+    const docUrl = getCrmRecordUrl(d);
     const marksHtml = getMarksArray(d).map(m => `<span class="mark-pill">${m}</span>`).join('');
 
     const creatorActions = buildPersonActionButtonsHtml(getCreatorUpn(d));
@@ -2398,7 +2421,7 @@ function renderDrawerList(q) {
 
     return `<div class="doc-card">
       <div class="doc-top">
-        <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">${DOC_ICON_SVG}<span>${docTitle} (Открыть ↗)</span></a>
+        <a href="${escapeHtml(docUrl)}" target="_blank" rel="noopener" title="${linkTitle}">${d.isInternalRequest ? CHATZONE_ICON_SVG : DOC_ICON_SVG}<span>${escapeHtml(docTitle)} (Открыть ↗)</span></a>
         <div class="doc-badges-row">
           ${getHeadingBadgeHtml(d.heading)}
           <span class="dir-badge badge-entity">ЮЛ: ${getLegalEntity(d)}</span>
@@ -2406,7 +2429,10 @@ function renderDrawerList(q) {
         </div>
       </div>
       <div class="doc-meta">
-        <div><strong>Тип документа:</strong> ${getDocType(d)} · <strong>Очередь:</strong> ${getQueueName(d)} · <strong>Ticket ID:</strong> ${t.id || '—'}</div>
+        <div>${d.isInternalRequest
+          ? `<strong>Категория:</strong> ${escapeHtml(d.categoryName || 'Без категории')} · <strong>Тема:</strong> ${escapeHtml(getInternalRequestTheme(d))}`
+          : `<strong>Тип документа:</strong> ${escapeHtml(getDocType(d))}`} · <strong>Очередь:</strong> ${getQueueName(d)} · <strong>Ticket ID:</strong> ${t.id || '—'}</div>
+        ${activeDrawerMode === 'registrars' ? `<div><strong>Результат:</strong> ${escapeHtml(getDocumentResult(d))}</div>` : ''}
         <div><strong>Регистратор:</strong> ${getCreatorLabel(d)} (${getCreatorGroup(d)})${creatorActions}</div>
         <div><strong>Исполнитель:</strong> ${formatOperatorHtml(d)}${operatorActions}</div>
         <div><strong>Создан:</strong> ${formatDateTimeRu(d.createdAt)} · <strong>Посл. апдейт:</strong> ${formatDateTimeRu(d.updatedAt)} (${sinceUpdateDur || 'только что'}) · <strong>Дедлайн:</strong> ${formatDateTimeRu(d.deadline)}</div>
@@ -2437,6 +2463,7 @@ function bindWidgetEvents(mode) {
   const p = st.prefix;
 
   const rerender = () => renderWidgetTable(mode);
+  if (mode === 'registrars') initMultiSelect('rgWrapResult', 'Результат', 'Все результаты', rerender);
   initMultiSelect(`${p}WrapEntity`, 'Юрлицо Финтеха', 'Все юрлица', rerender);
   initMultiSelect(`${p}WrapHeading`, 'Направление', 'Все направления', rerender);
   initMultiSelect(`${p}WrapDocType`, 'Тип документа', 'Все типы документов', rerender);
@@ -2454,9 +2481,10 @@ function bindWidgetEvents(mode) {
       const key = requestThemes.getAttribute('data-request-themes');
       if (key === 'total') st.totalRequestThemesExpanded = !st.totalRequestThemesExpanded;
       else if (key.startsWith('group:')) {
-        if (!st.collapsedGroups.has(decodeURIComponent(key.slice(6))) && st.expandedGroupRequestThemes.has(key)) st.expandedGroupRequestThemes.delete(key);
+        const group = decodeURIComponent(key.slice(6));
+        if (isGroupExpanded(st, group) && st.expandedGroupRequestThemes.has(key)) st.expandedGroupRequestThemes.delete(key);
         else st.expandedGroupRequestThemes.add(key);
-        st.collapsedGroups.delete(decodeURIComponent(key.slice(6)));
+        st.groupExpansion.set(group, true);
       } else if (key.startsWith('user:')) {
         if (st.expandedUserRequestThemes.has(key)) st.expandedUserRequestThemes.delete(key);
         else st.expandedUserRequestThemes.add(key);
@@ -2478,8 +2506,8 @@ function bindWidgetEvents(mode) {
     if (grpTypes) {
       e.stopPropagation();
       const gName = grpTypes.getAttribute('data-grp-types');
-      const wasVisible = !st.collapsedGroups.has(gName) && st.expandedGroupDocTypes.has(gName);
-      st.collapsedGroups.delete(gName);
+      const wasVisible = isGroupExpanded(st, gName) && st.expandedGroupDocTypes.has(gName);
+      st.groupExpansion.set(gName, true);
       if (wasVisible) st.expandedGroupDocTypes.delete(gName);
       else st.expandedGroupDocTypes.add(gName);
       renderWidgetTable(mode);
@@ -2494,11 +2522,11 @@ function bindWidgetEvents(mode) {
     const grp = e.target.closest('[data-grp]');
     if (grp) {
       const gName = grp.getAttribute('data-grp');
-      if (st.collapsedGroups.has(gName)) {
-        st.collapsedGroups.delete(gName);
+      if (!isGroupExpanded(st, gName)) {
+        st.groupExpansion.set(gName, true);
         st.expandedGroupDocTypes.add(gName);
         if (mode === 'executors') st.expandedGroupRequestThemes.add('group:' + encodeURIComponent(gName));
-      } else st.collapsedGroups.add(gName);
+      } else st.groupExpansion.set(gName, false);
       renderWidgetTable(mode);
       return;
     }
@@ -2535,7 +2563,7 @@ function bindWidgetEvents(mode) {
     document.getElementById(`${p}BtnToggleDocTypes`).textContent = `${st.allUsersExpanded ? 'Свернуть' : 'Развернуть'} ${label}`;
     if (st.allUsersExpanded) {
       const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
-      st.collapsedGroups.clear();
+      setAllGroupsExpanded(st, true);
       allSource.forEach(d => {
         const group = getGroupByMode(d, mode);
         const user = `${group}__${getPersonByMode(d, mode)}`;
@@ -2560,18 +2588,16 @@ function bindWidgetEvents(mode) {
 
   document.getElementById(`${p}BtnStop`).onclick = async () => {
     const tab = await findSedTab();
-    if (tab) chrome.tabs.sendMessage(tab.id, { target: 'INJECTOR', type: 'STOP_FETCH' }).catch(() => {});
-    if (mode === 'executors') {
-      activeDeadlineBatch = '';
-      isDeadlinesLoading = false;
-      batchError = 'Обновление остановлено.';
-      renderDeadlinePanel();
-    }
+    if (tab) chrome.tabs.sendMessage(tab.id, { target: 'INJECTOR', type: 'STOP_FETCH', payload: { requestId: st.requestId } }).catch(() => {});
+    st.requestId = null;
+    st.loading = false;
+    if (mode === 'executors') isInternalRequestsLoading = false;
     setProgress(p, false);
     showSkeleton(p, false);
   };
 
   document.getElementById(`${p}BtnReset`).onclick = () => {
+    if (mode === 'registrars') resetMultiSelect('rgWrapResult');
     ['Entity', 'Heading', 'DocType', 'Group', 'Person', 'Queue', 'Origin', 'Mark'].forEach(field => resetMultiSelect(`${p}Wrap${field}`));
     if (mode === 'executors') {
       syncExecutorSharedFilter(`${p}WrapQueue`, 'Queue', false);
@@ -2581,12 +2607,11 @@ function bindWidgetEvents(mode) {
   };
 
   document.getElementById(`${p}BtnExpandGroups`).onclick = () => {
-    st.collapsedGroups.clear();
+    setAllGroupsExpanded(st, true);
     renderWidgetTable(mode);
   };
   document.getElementById(`${p}BtnCollapseGroups`).onclick = () => {
-    const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
-    allSource.forEach(d => st.collapsedGroups.add(getGroupByMode(d, mode)));
+    setAllGroupsExpanded(st, false);
     renderWidgetTable(mode);
   };
 
@@ -2600,21 +2625,35 @@ function bindWidgetEvents(mode) {
   };
 }
 
+const widgetTabs = {
+  executors: ['tabExecutors', 'widgetExecutors', 'exHeaderActions'],
+  registrars: ['tabRegistrars', 'widgetRegistrars', 'rgHeaderActions'],
+  deadlines: ['tabDeadlines', 'widgetDeadlines', 'dlHeaderActions']
+};
+
 function activateWidgetTab(mode) {
-  const isReg = (mode === 'registrars');
-  document.getElementById('exHeaderActions').hidden = isReg;
-  document.getElementById('rgHeaderActions').hidden = !isReg;
-  document.getElementById('tabExecutors').setAttribute('aria-pressed', String(!isReg));
-  document.getElementById('tabRegistrars').setAttribute('aria-pressed', String(isReg));
-  document.getElementById('tabExecutors').classList.toggle('active', !isReg);
-  document.getElementById('tabRegistrars').classList.toggle('active', isReg);
-  document.getElementById('widgetExecutors').style.display = isReg ? 'none' : 'block';
-  document.getElementById('widgetRegistrars').style.display = isReg ? 'block' : 'none';
-  if (!STATE[mode].hasLoadedOnce) fetchWidgetData(mode);
+  for (const [name, [tabId, panelId, actionsId]] of Object.entries(widgetTabs)) {
+    const selected = name === mode;
+    const tab = document.getElementById(tabId);
+    tab.setAttribute('aria-pressed', String(selected));
+    tab.classList.toggle('active', selected);
+    document.getElementById(panelId).hidden = !selected;
+    document.getElementById(actionsId).hidden = !selected;
+  }
+  if (mode === 'deadlines') {
+    changeDeadlinePeriod(deadlinePeriod);
+  } else if (!STATE[mode].hasLoadedOnce && !STATE[mode].loading) {
+    fetchWidgetData(mode);
+  }
 }
 
-document.getElementById('tabExecutors').onclick = () => activateWidgetTab('executors');
-document.getElementById('tabRegistrars').onclick = () => activateWidgetTab('registrars');
+for (const [mode, [tabId]] of Object.entries(widgetTabs)) {
+  document.getElementById(tabId).onclick = () => activateWidgetTab(mode);
+}
+document.getElementById('dlBtnReload').onclick = () => changeDeadlinePeriod(deadlinePeriod, true);
+document.getElementById('dlBtnExpandTab').onclick = () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html?widget=deadlines') });
+};
 
 document.getElementById('btnDrClose').onclick = () => {
   document.getElementById('drillDrawer').classList.remove('open');
@@ -2645,7 +2684,7 @@ function exportAlertDocsCsv(docs, filename) {
     return {
       'Номер_Документа': d.documentName || '',
       'Юрлицо_Финтеха': getLegalEntity(d),
-      'Ссылка_На_Документ': `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`,
+      'Ссылка_На_Документ': getCrmRecordUrl(d),
       'Дедлайн': formatDateTimeRu(d.deadline),
       'Дата_Создания': formatDateTimeRu(d.createdAt),
       'Посл_Апдейт': formatDateTimeRu(d.updatedAt),
@@ -2678,8 +2717,9 @@ document.getElementById('btnDrCsv').onclick = () => {
     return {
       'Номер_Документа': d.documentName || '',
       'Юрлицо_Финтеха': getLegalEntity(d),
-      'Ссылка_На_Документ': `${CRM_BASE_URL}/sed/document/${encodeURIComponent(d.id)}`,
+      'Ссылка_На_Документ': getCrmRecordUrl(d),
       'ID_Документа': d.id,
+      ...(activeDrawerMode === 'registrars' ? { 'Результат': getDocumentResult(d) } : {}),
       'Направление': formatHeadingRu(d.heading),
       'Тип_Документа': getDocType(d),
       'Очередь': getQueueName(d),
@@ -2766,6 +2806,6 @@ async function checkForGithubUpdates() {
   checkForGithubUpdates();
 
   const params = new URLSearchParams(window.location.search);
-  const startWidget = params.get('widget') === 'registrars' ? 'registrars' : 'executors';
-  activateWidgetTab(startWidget);
+  const requestedWidget = params.get('widget');
+  activateWidgetTab(Object.hasOwn(widgetTabs, requestedWidget) ? requestedWidget : 'executors');
 })();

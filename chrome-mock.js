@@ -113,7 +113,7 @@
       const id = firstId + index;
       return {
         ...doc, id: String(id), isInternalRequest: true, internalRequestId: String(id),
-        categoryName: ['Документооборот', 'Обращения', 'Обращения'][index % 3],
+        categoryName: ['СЭД: закрытый тикет.распечатка', 'Обращения', 'Обращения'][index % 3],
         documentName: '', themeName: ['Согласование', 'Регистрация'][index % 2],
         internalRequestClosedAt: doc.ticket.closedAt,
         ticket: { ...doc.ticket, id, origin: 'CHANNEL_INTERNAL_REQUEST' }
@@ -145,12 +145,16 @@
       });
 
       const items = buildSampleDocs(dateYMD, mode === 'registrars' ? 32 : 40, mode === 'registrars' ? 'ASSIGNED' : 'CLOSED');
+      if (mode === 'registrars') {
+        const results = ['Направлен исходящий документ - ЭЗП', 'Передан на исполнение', ''];
+        items.forEach((doc, index) => { doc.resultName = results[index % results.length]; });
+      }
 
       emitRuntimeMessage({
         type: 'LIVE_RESULT',
         payload: {
           mode,
-          targetDate: dateYMD,
+          requestId: payload.requestId, targetDate: dateYMD,
           fetchedAt: new Date().toISOString(),
           totalScanned: items.length,
           items
@@ -158,26 +162,16 @@
       });
 
       if (mode === 'executors') {
-        const yest = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
-        cachedOverdue = cachedOverdue || buildSampleDocs(yest, 6, 'CREATED', yest);
-        cachedDueToday = buildSampleDocs(dueDateYMD, 8, 'ACKNOWLEDGED', dueDateYMD);
         cachedAssigned = cachedAssigned || buildSampleDocs(dateYMD, 9, 'ASSIGNED', dueDateYMD);
-
         emitRuntimeMessage({
-          type: 'DEADLINES_RESULT',
-          payload: {
-            deadlineBatchId: payload.deadlineBatchId, todayYMD: dueDateYMD,
-            yesterdayYMD: yest,
-            overdueDocs: cachedOverdue,
-            dueTodayDocs: cachedDueToday,
-            assignedDocs: cachedAssigned
-          }
+          type: 'EXECUTOR_WORKLOAD_RESULT',
+          payload: { requestId: payload.requestId, assignedDocs: cachedAssigned, onHoldDocs: [] }
         });
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
         emitRuntimeMessage({
           type: 'INTERNAL_REQUESTS_RESULT',
           payload: {
-            closedInternalRequests: buildInternalRequests(dateYMD, 4, 'CLOSED', 95000),
+            requestId: payload.requestId, closedInternalRequests: buildInternalRequests(dateYMD, 4, 'CLOSED', 95000),
             internalRequestsInWork: buildInternalRequests(today, 3, 'ASSIGNED', 95100),
             internalRequestsOnHold: buildInternalRequests(today, 2, 'ON_HOLD', 95200)
           }
@@ -188,12 +182,13 @@
 
     if (type === 'FETCH_DUE_DATE') {
       const dueDateYMD = payload.dueDateYMD || new Date().toISOString().slice(0, 10);
-      cachedDueToday = buildSampleDocs(dueDateYMD, 8, 'ACKNOWLEDGED', dueDateYMD);
+      if (payload.overdue) cachedOverdue = buildSampleDocs(dueDateYMD, 6, 'CREATED', dueDateYMD);
+      else cachedDueToday = buildSampleDocs(dueDateYMD, 8, 'ACKNOWLEDGED', dueDateYMD);
       emitRuntimeMessage({
         type: 'DUE_DATE_RESULT',
         payload: {
           requestId: payload.requestId, dueDateYMD,
-          dueTodayDocs: cachedDueToday
+          dueTodayDocs: payload.overdue ? cachedOverdue : cachedDueToday
         }
       });
       return;
@@ -256,7 +251,7 @@
 
   window.chrome = {
     runtime: {
-      getManifest: () => ({ version: '3.1.14', name: 'Ozon Банк · СЭД Онлайн-Дашборд' }),
+      getManifest: () => ({ version: '3.1.16', name: 'Ozon Банк · СЭД Онлайн-Дашборд' }),
       getURL: (path) => path,
       reload: () => window.location.reload(),
       onMessage: {

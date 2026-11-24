@@ -194,20 +194,14 @@
 
     /* ===================================================================== */
     /* Документы по сроку */
-    details.alert-acc {
+    .deadline-panel {
       margin-bottom: 6px; background: var(--o3-surface); border-radius: 9px;
       border: 1px solid var(--o3-border); box-shadow: var(--o3-shadow);
     }
-    .alert-acc > summary {
+    .deadline-heading {
       display: flex; align-items: center; gap: 8px; padding: 7px 10px;
-      min-height: 32px; cursor: pointer; list-style: none; color: var(--o3-text-sec);
+      min-height: 32px; color: var(--o3-text-sec);
     }
-    .alert-acc > summary::-webkit-details-marker { display: none; }
-    .alert-acc > summary::before {
-      content: ""; width: 6px; height: 6px; border: solid currentColor;
-      border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg);
-    }
-    .alert-acc[open] > summary::before { transform: rotate(45deg); }
     .deadline-summary-title { font-weight: 700; color: var(--o3-text); }
     .alert-pill { padding: 2px 7px; border-radius: 9px; font-weight: 700; }
     .alert-pill.red { background: var(--o3-red-light); color: var(--o3-red); }
@@ -304,7 +298,7 @@
     .assign-status-line.visible { display: flex; }
 
     .alert-body {
-      max-height: 290px; overflow-y: auto; border-radius: 0 0 11px 11px;
+      border-radius: 0 0 11px 11px;
     }
     .doc-card.selected-doc {
       background: var(--o3-blue-light);
@@ -508,6 +502,14 @@
     }
     tr.operator-row:hover td, tr.operator-row:hover td.sticky-col { background: var(--o3-surface-hover); }
 
+    .operator-line { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+    .operator-line > * { flex: none; }
+    .operator-line .operator-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .operator-line .tree-detail-controls, .operator-line .op-actions, .operator-line .op-status-badge { margin-left: 0; }
+    .operator-line .op-actions, .operator-line .tree-detail-controls { gap: 2px; }
+    .operator-line .icon-action-btn, .operator-line .tree-detail-control { width: 19px; height: 20px; }
+    .operator-line .op-status-skeleton .sk-inline { width: 38px; }
+    .operator-arrow { color: var(--o3-text-muted); font-size: 10px; }
     .op-actions {
       display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; vertical-align: middle;
     }
@@ -586,11 +588,11 @@
     .aft-dur { font-weight: 700; color: var(--o3-blue); white-space: nowrap; font-size: 11px; }
     .paired-count-cell { text-align: center; min-width: 112px; }
     .paired-count-values { display: flex; justify-content: center; align-items: center; gap: 5px; flex-wrap: wrap; }
-    .paired-metric { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; padding: 2px 5px; border-radius: 6px; font-size: 11px; }
+    .paired-metric { border: 0; font-family: inherit; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; padding: 2px 5px; border-radius: 6px; font-size: 11px; }
     .paired-metric.metric-document { color: var(--o3-blue); background: var(--o3-blue-light); }
     .paired-metric.metric-request { color: var(--o3-pink-text); background: var(--o3-pink-light); }
-    .cell-btn.paired-metric:hover { background: var(--o3-brand); color: var(--o3-on-brand); }
-    .cell-btn.metric-request:hover { background: var(--o3-pink-text); color: var(--o3-surface); }
+    .cell-btn.paired-metric:is(:hover, :focus-visible) { background: var(--o3-brand); color: var(--o3-on-brand); }
+    .cell-btn.metric-request:is(:hover, :focus-visible) { background: var(--o3-pink-text); color: var(--o3-surface); }
     .paired-metric.zero { font-weight: 600; }
     .paired-metric.loading { cursor: default; }
     .op-status-skeleton { display: inline-flex; align-items: center; min-height: 16px; }
@@ -608,9 +610,8 @@
     }
     .detail-section strong { display: inline-flex; align-items: center; gap: 6px; color: var(--o3-text); }
     .detail-section strong span { display: inline-flex; }
-    .table-wrap .detail-metric.zero, .table-wrap .detail-na { color: var(--o3-text-muted); }
-    .table-wrap .cell-btn.detail-metric { color: var(--o3-blue); background: var(--o3-blue-light); }
-    .table-wrap .cell-btn.detail-metric:hover { color: var(--o3-on-brand); background: var(--o3-brand); }
+    .doctype-row .paired-metric { background: transparent; }
+    .doctype-row .paired-metric.zero, .table-wrap .detail-na { color: var(--o3-text-muted); }
     tr.request-category-row td.sticky-col { padding-left: 22px; color: var(--o3-text); font-weight: 600; }
     tr.request-theme-row td.sticky-col { padding-left: 36px; color: var(--o3-text-sec); }
     .breakdown-group-col { background: var(--o3-surface-hover); color: var(--o3-text-sec); font-size: 11px; text-align: center; }
@@ -770,9 +771,10 @@
   <!-- Верхняя панель: переключатель виджетов + кнопка версии + переключатель Тёмной/Светлой темы -->
   <header class="header-row">
     <div class="brand"><span class="brand-logo">O3</span><strong>СЭД</strong></div>
-    <div class="widget-switcher">
-      <button id="tabExecutors" title="crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Завершен" class="w-tab active">Исполнители</button>
-      <button id="tabRegistrars" title="crm.bank.ozon.ru · Фильтр по дате создания (регистрации) документа" class="w-tab">Регистраторы</button>
+    <div class="widget-switcher" role="group" aria-label="Разделы дашборда">
+      <button id="tabExecutors" aria-controls="widgetExecutors" title="crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Завершен" class="w-tab active">Исполнители</button>
+      <button id="tabRegistrars" aria-controls="widgetRegistrars" title="crm.bank.ozon.ru · Фильтр по дате создания (регистрации) документа" class="w-tab">Регистраторы</button>
+      <button id="tabDeadlines" class="w-tab" aria-controls="widgetDeadlines">Сроки</button>
     </div>
     <div class="top-actions" id="exHeaderActions">
       <div class="as-of-badge">Актуально на: <strong id="exAsOfTime">—</strong></div>
@@ -784,21 +786,20 @@
       <button id="rgBtnCsv" class="btn btn-light">CSV</button>
       <button id="rgBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
     </div>
+    <div class="top-actions" id="dlHeaderActions" hidden>
+      <button id="dlBtnReload" class="btn btn-light">Обновить</button>
+      <button id="dlBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
+    </div>
     <button id="btnReloadExt" class="theme-btn" title="Нажмите, чтобы перезагрузить расширение после запуска update.bat">v—</button>
     <button id="btnThemeToggle" class="theme-btn" title="Переключить Светлую / Тёмную тему">Тёмная</button>
   </header>
 
-  <!-- ======================================================================= -->
-  <!-- ВИДЖЕТ 1: ДАШБОРД ИСПОЛНИТЕЛЕЙ (ПО ДАТЕ ЗАКРЫТИЯ, СТАТУС = CLOSED)       -->
-  <!-- ======================================================================= -->
-  <div id="widgetExecutors">
-
-    <details id="deadlinePanel" class="alert-acc">
-      <summary>
+  <section id="widgetDeadlines" class="deadline-panel" aria-labelledby="tabDeadlines" hidden>
+      <div class="deadline-heading">
         <span class="deadline-summary-title">Документы по сроку</span>
         <span id="deadlineSummaryScope">Просроченные</span>
         <span id="deadlineCount" class="alert-pill red" aria-live="polite">…</span>
-      </summary>
+      </div>
       <div class="deadline-tools">
         <div class="deadline-period" role="group" aria-label="Срок документа">
           <button type="button" data-period="overdue" aria-pressed="true">Просроченные</button>
@@ -828,7 +829,12 @@
         <div id="assignStatusDeadline" class="assign-status-line"></div>
       </div>
       <div id="listDeadline" class="alert-body"></div>
-    </details>
+  </section>
+
+  <!-- ======================================================================= -->
+  <!-- ВИДЖЕТ 1: ДАШБОРД ИСПОЛНИТЕЛЕЙ (ПО ДАТЕ ЗАКРЫТИЯ, СТАТУС = CLOSED)       -->
+  <!-- ======================================================================= -->
+  <div id="widgetExecutors">
 
     <div class="card">
       <div class="filters-grid">
@@ -898,7 +904,7 @@
   <!-- ======================================================================= -->
   <!-- ВИДЖЕТ 2: ОТДЕЛЬНЫЙ ДАШБОРД РЕГИСТРАТОРОВ (ПО ДАТЕ СОЗДАНИЯ)             -->
   <!-- ======================================================================= -->
-  <div id="widgetRegistrars" style="display:none;">
+  <div id="widgetRegistrars" hidden>
 
     <div class="card">
       <div class="filters-grid">
@@ -910,6 +916,7 @@
         <div id="rgWrapEntity" class="o3-field" data-label="Юрлицо Финтеха"></div>
         <div id="rgWrapHeading" class="o3-field" data-label="Направление"></div>
         <div id="rgWrapDocType" class="o3-field" data-label="Тип документа"></div>
+        <div id="rgWrapResult" class="o3-field" data-label="Результат"></div>
         <div id="rgWrapGroup" class="o3-field" data-label="Группа регистраторов"></div>
         <div id="rgWrapPerson" class="o3-field" data-label="Регистратор"></div>
         <div id="rgWrapQueue" class="o3-field" data-label="Очередь"></div>

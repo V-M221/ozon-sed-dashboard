@@ -12,7 +12,7 @@ let cellSeq = 0;
 let logsArray = [];
 
 let rawOverdueDocs = [];
-let rawDueTodayDocs = [];
+let rawDatedDocs = [];
 let rawAssignedDocs = [];
 let rawHoldDocs = [];
 let rawClosedInternalRequestDocs = [];
@@ -21,19 +21,23 @@ let rawInternalRequestsOnHold = [];
 let isInternalRequestsLoading = false;
 let operatorStatusRequestSequence = 0;
 const activeOperatorStatusRequestIds = { executors: null, registrars: null };
-let filteredOverdueDocs = [];
-let filteredDueTodayDocs = [];
+let filteredDeadlineDocs = [];
+let deadlinePeriod = 'overdue';
+let targetDueYMD = '';
+let loadedDueYMD = '';
+let activeDueRequest = '';
+let activeDeadlineBatch = '';
 let isDeadlinesLoading = false;
 let isDueDateSingleLoading = false;
+let batchError = '';
+let dueDateError = '';
 
 const ASSIGN_STATE = {
-  Overdue: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null },
-  DueToday: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null }
+  Deadline: { selectedAlertIds: new Set(), selectedOperator: null, searchResults: [], isAssigning: false, debounceTimer: null }
 };
 
 // Состояние модального окна рассылки уведомлений в Chatzone ("Дополнительные теги")
 const PUSH_MODAL_STATE = {
-  section: 'DueToday',
   docs: [],
   queuesList: [], // [{ queueKey, queueName, docs }]
   extraOperatorsByQueue: new Map(), // queueKey -> Map(upn -> { id, fullName, upn, tag })
@@ -76,7 +80,7 @@ function formatOperatorHtml(d, includeGroup = true) {
   const grp = getOperatorGroup(d);
   if (label === 'Не назначен') {
     const grpPart = includeGroup ? ` <span style="color:var(--o3-text-sec); font-weight:400;">(${grp})</span>` : '';
-    return `<span style="color:var(--o3-red); font-weight:700;">🚨 Не назначен</span>${grpPart}`;
+    return `<span style="color:var(--o3-red); font-weight:700;">Не назначен</span>${grpPart}`;
   }
   return includeGroup ? `${label} (${grp})` : label;
 }
@@ -107,28 +111,7 @@ function upnToTag(upn) {
   return clean ? `@${clean}` : '';
 }
 
-(function injectAssignedStyles() {
-  const st = document.createElement('style');
-  st.textContent = `
-    th.assigned-col { background: rgba(245, 158, 11, 0.12) !important; color: var(--o3-amber, #D97706) !important; }
-    .cell-btn.assigned-btn { background: rgba(245, 158, 11, 0.15); color: var(--o3-amber, #D97706); }
-    .cell-btn.assigned-btn:hover { background: var(--o3-amber, #D97706); color: #fff; }
-    .assigned-floating-tooltip {
-      position: fixed; z-index: 9999; pointer-events: none;
-      background: var(--o3-surface-elevated, #1B1E23); color: var(--o3-text, #fff);
-      border: 1px solid var(--o3-border, #343942); border-radius: 12px;
-      padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.28);
-      max-width: 380px; font-size: 11.5px; display: none;
-    }
-    .aft-title { font-weight: 700; font-size: 12px; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid var(--o3-border-light); color: var(--o3-amber, #D97706); }
-    .aft-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--o3-border-light); }
-    .aft-row:last-child { border-bottom: none; }
-    .aft-type { font-weight: 600; color: var(--o3-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .aft-doc { color: var(--o3-text-sec); font-size: 11px; margin-left: 4px; }
-    .aft-dur { font-weight: 700; color: var(--o3-blue); white-space: nowrap; font-size: 11px; }
-  `;
-  document.head.appendChild(st);
-
+(function createAssignedTooltip() {
   const tt = document.createElement('div');
   tt.id = 'assignedFloatingTooltip';
   tt.className = 'assigned-floating-tooltip';
@@ -232,26 +215,6 @@ document.addEventListener('mousedown', (e) => {
   }
 });
 
-function bindSyncAccordions() {
-  const accOver = document.getElementById('accOverdue');
-  const accToday = document.getElementById('accDueToday');
-  if (!accOver || !accToday) return;
-
-  let isSyncing = false;
-  accOver.addEventListener('toggle', () => {
-    if (isSyncing) return;
-    isSyncing = true;
-    accToday.open = accOver.open;
-    isSyncing = false;
-  });
-  accToday.addEventListener('toggle', () => {
-    if (isSyncing) return;
-    isSyncing = true;
-    accOver.open = accToday.open;
-    isSyncing = false;
-  });
-}
-
 document.addEventListener('click', (e) => {
   const chatLink = e.target.closest('[data-chatzone-link]');
   if (chatLink) {
@@ -331,7 +294,7 @@ function applyTheme(theme) {
   document.body.setAttribute('data-theme', theme);
   localStorage.setItem('o3_sed_theme', theme);
   const btn = document.getElementById('btnThemeToggle');
-  if (btn) btn.innerText = theme === 'dark' ? '☀️ Светлая' : '🌙 Тёмная';
+  if (btn) btn.innerText = theme === 'dark' ? 'Светлая' : 'Тёмная';
 }
 
 document.getElementById('btnThemeToggle').onclick = () => {
@@ -348,10 +311,11 @@ function initMultiSelect(containerId, labelText, placeholderText, onChange) {
   multiSelectRegistry.set(containerId, state);
 
   el.innerHTML = `
-    <div class="o3-field-label">${labelText}</div>
-    <div class="o3-field-value" style="color:var(--o3-text-sec);">${placeholderText}</div>
-    <span class="o3-field-arrow">▼</span>
-    <div class="o3-dropdown">
+    <button type="button" class="o3-filter-trigger" aria-expanded="false" aria-controls="${containerId}Options" aria-label="${labelText}: ${placeholderText}">
+      <span class="o3-field-value">${placeholderText}</span>
+      <span class="o3-field-arrow" aria-hidden="true"></span>
+    </button>
+    <div class="o3-dropdown" id="${containerId}Options">
       <div class="o3-dd-search-wrap"><input type="text" class="o3-dd-search" placeholder="Поиск..."></div>
       <div class="o3-dd-list"></div>
     </div>
@@ -361,17 +325,25 @@ function initMultiSelect(containerId, labelText, placeholderText, onChange) {
   const dropdown = el.querySelector('.o3-dropdown');
   renderMultiSelectOptions(state, '');
 
-  el.addEventListener('click', (e) => {
-    if (e.target.closest('.o3-dropdown')) return;
+  const trigger = el.querySelector('.o3-filter-trigger');
+  trigger.addEventListener('click', () => {
     const wasOpen = el.classList.contains('open');
     closeAllMultiSelects();
     if (!wasOpen) {
       el.classList.add('open');
+      trigger.setAttribute('aria-expanded', 'true');
       if (searchInput) {
         searchInput.value = '';
         renderMultiSelectOptions(state, '');
-        setTimeout(() => searchInput.focus(), 20);
+        searchInput.focus();
       }
+    }
+  });
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && el.classList.contains('open')) {
+      closeAllMultiSelects();
+      trigger.focus();
     }
   });
 
@@ -410,8 +382,8 @@ function syncExecutorSharedFilter(sourceId, kind, rerender = true) {
   const source = multiSelectRegistry.get(sourceId);
   if (!source) return;
   const targetIds = kind === 'Queue'
-    ? ['exWrapQueue', 'alertQueueFilterOverdue', 'alertQueueFilterDueToday']
-    : ['exWrapOrigin', 'alertOriginFilterOverdue', 'alertOriginFilterDueToday'];
+    ? ['exWrapQueue', 'alertQueueFilter']
+    : ['exWrapOrigin', 'alertOriginFilter'];
   targetIds.forEach(id => {
     if (id === sourceId) return;
     const target = multiSelectRegistry.get(id);
@@ -427,14 +399,16 @@ function updateMultiSelectHeader(state) {
   const el = document.getElementById(state.containerId);
   if (!el) return;
   const valEl = el.querySelector('.o3-field-value');
+  const trigger = el.querySelector('.o3-filter-trigger');
   if (state.selected.size === 0) {
     valEl.textContent = state.placeholderText;
-    valEl.style.color = 'var(--o3-text-sec)';
   } else {
     const labels = state.options.filter(o => state.selected.has(o.value)).map(o => o.label);
     valEl.textContent = labels.join(', ');
-    valEl.style.color = 'var(--o3-text)';
   }
+  trigger.title = state.labelText + ': ' + valEl.textContent;
+  trigger.setAttribute('aria-label', trigger.title);
+  trigger.classList.toggle('has-selection', state.selected.size > 0);
 }
 
 function renderMultiSelectOptions(state, searchQuery) {
@@ -444,17 +418,17 @@ function renderMultiSelectOptions(state, searchQuery) {
   const q = (searchQuery || '').trim().toLowerCase();
   const filtered = state.options.filter(o => !q || o.label.toLowerCase().includes(q));
 
-  let html = `<div class="o3-dd-item ${state.selected.size === 0 ? 'selected' : ''}" data-val="__CLEAR_ALL__">
+  let html = `<button type="button" class="o3-dd-item ${state.selected.size === 0 ? 'selected' : ''}" data-val="__CLEAR_ALL__">
     <span class="o3-dd-item-text">${state.placeholderText}</span>
     <span class="o3-dd-check">${CHECK_SVG}</span>
-  </div>`;
+  </button>`;
 
   html += filtered.map(o => {
     const isSel = state.selected.has(o.value);
-    return `<div class="o3-dd-item ${isSel ? 'selected' : ''}" data-val="${o.value.replace(/"/g, '&quot;')}">
-      <span class="o3-dd-item-text" title="${o.label.replace(/"/g, '&quot;')}">${o.label}</span>
+    return `<button type="button" class="o3-dd-item ${isSel ? 'selected' : ''}" aria-pressed="${isSel}" data-val="${escapeHtml(o.value)}">
+      <span class="o3-dd-item-text" title="${escapeHtml(o.label)}">${escapeHtml(o.label)}</span>
       <span class="o3-dd-check">${CHECK_SVG}</span>
-    </div>`;
+    </button>`;
   }).join('');
   listEl.innerHTML = html;
 }
@@ -473,7 +447,10 @@ function resetMultiSelect(containerId) {
 }
 
 function closeAllMultiSelects() {
-  document.querySelectorAll('.o3-field.open').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.o3-field.open').forEach(el => {
+    el.classList.remove('open');
+    el.querySelector('.o3-filter-trigger').setAttribute('aria-expanded', 'false');
+  });
 }
 
 function setFiltersSkeleton(prefix, show) {
@@ -486,8 +463,11 @@ function setFiltersSkeleton(prefix, show) {
     const valEl = el.querySelector('.o3-field-value');
     if (!valEl) return;
 
+    const trigger = el.querySelector('.o3-filter-trigger');
+    trigger.disabled = show;
     if (show) {
       el.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
       el.classList.add('loading-sk');
       valEl.innerHTML = `<span class="sk-filter-val"></span>`;
     } else {
@@ -724,18 +704,8 @@ function showSkeleton(prefix, show) {
     asOfEl.innerHTML = `<span class="sk-inline"></span>`;
   }
 
-  if (prefix === 'ex' && show) {
-    const skCardsHtml = getSkCardsMarkup();
-    const lOver = document.getElementById('listOverdue');
-    const lToday = document.getElementById('listDueToday');
-    if (lOver) lOver.innerHTML = skCardsHtml;
-    if (lToday) lToday.innerHTML = skCardsHtml;
+  if (prefix === 'ex' && show) renderDeadlinePanel();
 
-    const bOver = document.getElementById('badgeOverdueCount');
-    const bToday = document.getElementById('badgeDueTodayCount');
-    if (bOver) bOver.innerHTML = `<span class="sk-pill"></span>`;
-    if (bToday) bToday.innerHTML = `<span class="sk-pill"></span>`;
-  }
 }
 
 function setProgress(prefix, active, text = '') {
@@ -768,11 +738,16 @@ async function fetchWidgetData(mode) {
   const dateYMD = document.getElementById(`${p}Date`).value;
   if (!dateYMD) return;
 
-  const dueDateInput = document.getElementById('dueTargetDate');
-  const dueDateYMD = (dueDateInput && dueDateInput.value) || dateYMD;
-
+  const deadlineBatchId = mode === 'executors' ? crypto.randomUUID() : '';
+  const dueDateYMD = getDeadlineDate() || moscowDate();
   if (mode === 'executors') {
+    activeDeadlineBatch = deadlineBatchId;
+    activeDueRequest = '';
     isDeadlinesLoading = true;
+    isDueDateSingleLoading = false;
+    targetDueYMD = getDeadlineDate();
+    batchError = '';
+    dueDateError = '';
     isInternalRequestsLoading = true;
     rawClosedInternalRequestDocs = [];
     rawInternalRequestsInWork = [];
@@ -787,7 +762,11 @@ async function fetchWidgetData(mode) {
 
   const tab = await findSedTab();
   if (!tab) {
-    isDeadlinesLoading = false;
+    if (mode === 'executors' && deadlineBatchId === activeDeadlineBatch) {
+      isDeadlinesLoading = false;
+      batchError = 'Не удалось загрузить документы из СЭД.';
+      renderDeadlinePanel();
+    }
     showSkeleton(p, false);
     const msg = 'Не найдена открытая вкладка https://crm.bank.ozon.ru/! Откройте СЭД в браузере и нажмите «Обновить».';
     setProgress(p, true, msg);
@@ -799,10 +778,14 @@ async function fetchWidgetData(mode) {
     await ensureConnectionAndSend(tab.id, {
       target: 'INJECTOR',
       type: 'FETCH_DATE',
-      payload: { dateYMD, mode, dueDateYMD }
+      payload: { dateYMD, mode, dueDateYMD, deadlineBatchId }
     });
   } catch (e) {
-    isDeadlinesLoading = false;
+    if (mode === 'executors' && deadlineBatchId === activeDeadlineBatch) {
+      isDeadlinesLoading = false;
+      batchError = 'Не удалось загрузить документы из СЭД.';
+      renderDeadlinePanel();
+    }
     showSkeleton(p, false);
     setProgress(p, true, 'Ошибка связи со вкладкой СЭД: ' + e.message);
     addLog('error', 'Ошибка при отправке команды FETCH_DATE', e.stack || e.message);
@@ -848,37 +831,54 @@ async function requestOperatorStatuses(mode) {
   }
 }
 
-async function fetchCustomDueDateOnly() {
-  const dueDateInput = document.getElementById('dueTargetDate');
-  const dueDateYMD = dueDateInput ? dueDateInput.value : '';
-  if (!dueDateYMD) return;
+const moscowDayFormatter = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow' });
+function moscowDate(dayOffset = 0) {
+  return moscowDayFormatter.format(Date.now() + dayOffset * 86400000);
+}
 
-  isDueDateSingleLoading = true;
-  const lToday = document.getElementById('listDueToday');
-  const bToday = document.getElementById('badgeDueTodayCount');
-  if (lToday) lToday.innerHTML = getSkCardsMarkup();
-  if (bToday) bToday.innerHTML = `<span class="sk-pill"></span>`;
+function getDeadlineDate() {
+  if (deadlinePeriod === 'custom') return document.getElementById('dueTargetDate').value;
+  return moscowDate(deadlinePeriod === 'tomorrow' ? 1 : 0);
+}
 
-  const tab = await findSedTab();
-  if (!tab) {
-    isDueDateSingleLoading = false;
-    renderDeadlineAccordions();
+async function changeDeadlinePeriod(period) {
+  deadlinePeriod = period;
+  ASSIGN_STATE.Deadline.selectedAlertIds.clear();
+  const dateInput = document.getElementById('dueTargetDate');
+  dateInput.hidden = period !== 'custom';
+  document.querySelectorAll('[data-period]').forEach(btn => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.period === period));
+  });
+  const date = getDeadlineDate();
+  targetDueYMD = date;
+  activeDueRequest = '';
+  isDueDateSingleLoading = false;
+  dueDateError = '';
+  if (period === 'overdue' || !date || (date === loadedDueYMD && !batchError && !isDeadlinesLoading)) {
+    renderDeadlinePanel();
     return;
   }
 
+  const requestId = crypto.randomUUID();
+  activeDueRequest = requestId;
+  isDueDateSingleLoading = true;
+  renderDeadlinePanel();
   try {
+    const tab = await findSedTab();
+    if (!tab) throw new Error('Откройте вкладку СЭД.');
+    if (requestId !== activeDueRequest) return;
     await ensureConnectionAndSend(tab.id, {
-      target: 'INJECTOR',
-      type: 'FETCH_DUE_DATE',
-      payload: { dueDateYMD }
+      target: 'INJECTOR', type: 'FETCH_DUE_DATE', payload: { dueDateYMD: date, requestId }
     });
-  } catch (e) {
+  } catch (err) {
+    if (requestId !== activeDueRequest) return;
     isDueDateSingleLoading = false;
-    renderDeadlineAccordions();
+    dueDateError = err.message;
+    renderDeadlinePanel();
   }
 }
 
-function filterAlertDocsByExecutorsUI(docs, section) {
+function filterAlertDocsByExecutorsUI(docs) {
   const p = 'ex';
   const selEntities = getMultiSelectValues(`${p}WrapEntity`);
   const selHeadings = getMultiSelectValues(`${p}WrapHeading`);
@@ -887,9 +887,6 @@ function filterAlertDocsByExecutorsUI(docs, section) {
   const selPersons = getMultiSelectValues(`${p}WrapPerson`);
   const selQueues = getMultiSelectValues(`${p}WrapQueue`);
   const selOrigins = getMultiSelectValues(`${p}WrapOrigin`);
-  const alertSuffix = section === 'Overdue' ? 'Overdue' : 'DueToday';
-  const selAlertQueues = getMultiSelectValues(`alertQueueFilter${alertSuffix}`);
-  const selAlertOrigins = getMultiSelectValues(`alertOriginFilter${alertSuffix}`);
   const selMarks = getMultiSelectValues(`${p}WrapMark`);
 
   return (docs || []).filter(d => {
@@ -900,8 +897,6 @@ function filterAlertDocsByExecutorsUI(docs, section) {
     if (selPersons.size > 0 && !selPersons.has(getOperatorLabel(d))) return false;
     if (selQueues.size > 0 && !selQueues.has(getQueueName(d))) return false;
     if (selOrigins.size > 0 && !selOrigins.has(getOrigin(d))) return false;
-    if (selAlertQueues.size > 0 && !selAlertQueues.has(getQueueName(d))) return false;
-    if (selAlertOrigins.size > 0 && !selAlertOrigins.has(getOrigin(d))) return false;
 
     if (selMarks.size > 0) {
       const mks = getMarksArray(d);
@@ -915,15 +910,11 @@ function filterAlertDocsByExecutorsUI(docs, section) {
   });
 }
 
-function getSectionFilteredDocs(section) {
-  return section === 'Overdue' ? filteredOverdueDocs : filteredDueTodayDocs;
-}
-
 function updateAssignToolbarState(section) {
   const st = ASSIGN_STATE[section];
   if (!st) return;
 
-  const docs = getSectionFilteredDocs(section);
+  const docs = filteredDeadlineDocs;
   const validAlertIds = new Set(docs.map(d => Number(d.ticket && d.ticket.id)).filter(Boolean));
 
   Array.from(st.selectedAlertIds).forEach(id => {
@@ -935,6 +926,7 @@ function updateAssignToolbarState(section) {
 
   const chkAllEl = document.getElementById(`chkAll${section}`);
   if (chkAllEl) {
+    chkAllEl.disabled = validAlertIds.size === 0;
     chkAllEl.checked = validAlertIds.size > 0 && st.selectedAlertIds.size === validAlertIds.size;
     chkAllEl.indeterminate = st.selectedAlertIds.size > 0 && st.selectedAlertIds.size < validAlertIds.size;
   }
@@ -981,7 +973,7 @@ function renderDeadlineCardsList(docs, section) {
     return `<div class="doc-card ${isChecked ? 'selected-doc' : ''}" data-card-alert-id="${alertId}">
       <div class="doc-top">
         <div style="display:flex; align-items:center; gap:7px;">
-          ${alertId ? `<input type="checkbox" class="doc-check-input" data-doc-check="${section}" data-alert-id="${alertId}" ${isChecked ? 'checked' : ''} title="Выбрать документ">` : ''}
+          ${alertId ? `<input type="checkbox" class="doc-check-input" data-doc-check="${section}" data-alert-id="${alertId}" ${isChecked ? 'checked' : ''} aria-label="Выбрать документ ${escapeHtml(docTitle)}">` : ''}
           <a href="${docUrl}" target="_blank" title="Открыть карточку документа в СЭД">${DOC_ICON_SVG}<span>${docTitle} ↗</span></a>
         </div>
         <div class="doc-badges-row">
@@ -993,7 +985,7 @@ function renderDeadlineCardsList(docs, section) {
         </div>
       </div>
       <div class="doc-meta">
-        <div><strong>Дедлайн:</strong> <span style="color:var(--o3-red);font-weight:700;">${formatDateTimeRu(d.deadline)}</span> · <strong>Создан:</strong> ${formatDateTimeRu(d.createdAt)}</div>
+        <div><strong>Дедлайн:</strong> <span style="font-weight:700;">${formatDateTimeRu(d.deadline)}</span> · <strong>Создан:</strong> ${formatDateTimeRu(d.createdAt)}</div>
         <div><strong>Тип:</strong> ${getDocType(d)} · <strong>Очередь:</strong> ${getQueueName(d)} · <strong>Ticket ID:</strong> ${t.id || '—'}</div>
         <div><strong>Происхождение:</strong> ${escapeHtml(getOrigin(d))}</div>
         <div><strong>Исполнитель:</strong> ${formatOperatorHtml(d)}${operatorActions}</div>
@@ -1005,48 +997,52 @@ function renderDeadlineCardsList(docs, section) {
   }).join('');
 }
 
-function renderDeadlineAccordions() {
-  if (isDeadlinesLoading) return;
-  filteredOverdueDocs = filterAlertDocsByExecutorsUI(rawOverdueDocs, 'Overdue');
-  filteredDueTodayDocs = filterAlertDocsByExecutorsUI(rawDueTodayDocs, 'DueToday');
-
-  const bOver = document.getElementById('badgeOverdueCount');
-  const lOver = document.getElementById('listOverdue');
-  if (bOver) bOver.innerText = filteredOverdueDocs.length;
-  if (lOver) lOver.innerHTML = renderDeadlineCardsList(filteredOverdueDocs, 'Overdue');
-  updateAssignToolbarState('Overdue');
-
-  if (!isDueDateSingleLoading) {
-    const bToday = document.getElementById('badgeDueTodayCount');
-    const lToday = document.getElementById('listDueToday');
-    if (bToday) bToday.innerText = filteredDueTodayDocs.length;
-    if (lToday) lToday.innerHTML = renderDeadlineCardsList(filteredDueTodayDocs, 'DueToday');
-    updateAssignToolbarState('DueToday');
+function renderDeadlinePanel() {
+  const overdue = deadlinePeriod === 'overdue';
+  const waiting = overdue ? isDeadlinesLoading : isDueDateSingleLoading || (isDeadlinesLoading && !activeDueRequest);
+  const error = overdue ? batchError : dueDateError || (!activeDueRequest && batchError);
+  const needsDate = !overdue && !targetDueYMD;
+  const ready = !waiting && !error && !needsDate && (overdue || loadedDueYMD === targetDueYMD);
+  filteredDeadlineDocs = ready ? filterAlertDocsByExecutorsUI(overdue ? rawOverdueDocs : rawDatedDocs) : [];
+  const scope = document.querySelector('[data-period][aria-pressed="true"]').textContent;
+  document.getElementById('deadlineSummaryScope').textContent = deadlinePeriod === 'custom' && targetDueYMD ? formatYMDToRu(targetDueYMD) : scope;
+  const count = document.getElementById('deadlineCount');
+  count.className = 'alert-pill ' + (overdue ? 'red' : 'amber');
+  count.textContent = ready ? filteredDeadlineDocs.length : (waiting && !needsDate ? '…' : '—');
+  const list = document.getElementById('listDeadline');
+  if (needsDate || error) {
+    list.textContent = needsDate ? 'Выберите дату истечения срока.' : error;
+  } else {
+    list.innerHTML = ready ? renderDeadlineCardsList(filteredDeadlineDocs, 'Deadline') : getSkCardsMarkup();
   }
+  document.getElementById('btnCsvDeadline').disabled = !filteredDeadlineDocs.length;
+  updateAssignToolbarState('Deadline');
 }
 
 function bindDeadlineFilterControls() {
-  ['Overdue', 'DueToday'].forEach(section => {
-    const suffix = section === 'Overdue' ? 'Overdue' : 'DueToday';
-    initMultiSelect(`alertOriginFilter${suffix}`, 'Происхождение', 'Все происхождения', () => syncExecutorSharedFilter(`alertOriginFilter${suffix}`, 'Origin'));
-    initMultiSelect(`alertQueueFilter${suffix}`, 'Очередь', 'Все очереди', () => syncExecutorSharedFilter(`alertQueueFilter${suffix}`, 'Queue'));
+  initMultiSelect('alertOriginFilter', 'Происхождение', 'Все происхождения', () => syncExecutorSharedFilter('alertOriginFilter', 'Origin'));
+  initMultiSelect('alertQueueFilter', 'Очередь', 'Все очереди', () => syncExecutorSharedFilter('alertQueueFilter', 'Queue'));
+  document.querySelectorAll('[data-period]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.period !== deadlinePeriod || getDeadlineDate() !== targetDueYMD || dueDateError) {
+        changeDeadlinePeriod(btn.dataset.period);
+      }
+    });
   });
+  document.getElementById('dueTargetDate').addEventListener('change', () => changeDeadlinePeriod('custom'));
   populateDeadlineFilterOptions();
 }
 
 function populateDeadlineFilterOptions() {
   const docs = [
-    ...STATE.executors.docs, ...rawOverdueDocs, ...rawDueTodayDocs,
+    ...STATE.executors.docs, ...rawOverdueDocs, ...rawDatedDocs,
     ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs,
     ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold
   ];
   const origins = Array.from(new Set(docs.map(getOrigin))).sort();
   const queues = Array.from(new Set(docs.map(getQueueName))).sort();
-  [['Overdue', rawOverdueDocs], ['DueToday', rawDueTodayDocs]].forEach(([section]) => {
-    const suffix = section === 'Overdue' ? 'Overdue' : 'DueToday';
-    setMultiSelectOptions(`alertOriginFilter${suffix}`, origins);
-    setMultiSelectOptions(`alertQueueFilter${suffix}`, queues);
-  });
+  setMultiSelectOptions('alertOriginFilter', origins);
+  setMultiSelectOptions('alertQueueFilter', queues);
   syncExecutorSharedFilter('exWrapOrigin', 'Origin', false);
   syncExecutorSharedFilter('exWrapQueue', 'Queue', false);
 }
@@ -1101,16 +1097,15 @@ function renderOperatorDropdownItems(section, items) {
 // =========================================================================
 // ЛОГИКА РАССЫЛКИ НАПОМИНАНИЙ В CHATZONE (МОДАЛКА "ДОПОЛНИТЕЛЬНЫЕ ТЕГИ")
 // =========================================================================
-function openPushModalForAlertIds(section, alertIds) {
+function openPushModalForAlertIds(alertIds) {
   const idSet = new Set((alertIds || []).map(Number).filter(Boolean));
-  const sourceDocs = getSectionFilteredDocs(section);
+  const sourceDocs = filteredDeadlineDocs;
   const selectedDocs = sourceDocs.filter(d => d.ticket && idSet.has(Number(d.ticket.id)));
   if (!selectedDocs.length) {
     alert('Выберите хотя бы один документ для отправки уведомления!');
     return;
   }
 
-  PUSH_MODAL_STATE.section = section;
   PUSH_MODAL_STATE.docs = selectedDocs;
   PUSH_MODAL_STATE.queuesList = [];
   PUSH_MODAL_STATE.extraOperatorsByQueue.clear();
@@ -1215,7 +1210,7 @@ function renderPushModalOperatorDropdown(queueKey, items) {
 }
 
 function buildQueueMessagesList() {
-  const isOverdue = PUSH_MODAL_STATE.section === 'Overdue';
+  const today = moscowDate();
 
   return PUSH_MODAL_STATE.queuesList.map(q => {
     const extraMap = PUSH_MODAL_STATE.extraOperatorsByQueue.get(q.queueKey) || new Map();
@@ -1232,7 +1227,7 @@ function buildQueueMessagesList() {
 
       const tagsForDoc = [execTag, extraTagsStr].filter(Boolean).join(' ');
       const parts = [];
-      if (isOverdue) {
+      if (d.deadline && Number.isFinite(Date.parse(d.deadline)) && moscowDayFormatter.format(new Date(d.deadline)) < today) {
         parts.push('Просроченный документ!');
       }
       parts.push(docMarkdownLink, docType, deadlineDate);
@@ -1316,7 +1311,7 @@ async function executePushMessagesSend() {
       const item = messages[i];
       if (statusEl) {
         statusEl.style.color = 'var(--o3-blue)';
-        statusEl.innerText = `⏳ Отправка сообщения ${i + 1} из ${messages.length} (${item.queueName})...`;
+        statusEl.innerText = `Отправка сообщения ${i + 1} из ${messages.length} (${item.queueName})...`;
       }
       await sendSingleChatzonePost(item.messageText);
       sentCount++;
@@ -1325,7 +1320,7 @@ async function executePushMessagesSend() {
 
     if (statusEl) {
       statusEl.style.color = 'var(--o3-green)';
-      statusEl.innerText = `✅ Успешно отправлено ${sentCount} сообщ. в Chatzone!`;
+      statusEl.innerText = `Успешно отправлено ${sentCount} сообщ. в Chatzone!`;
     }
     setTimeout(() => {
       document.getElementById('pushModal').classList.remove('open');
@@ -1334,7 +1329,7 @@ async function executePushMessagesSend() {
     addLog('error', `Ошибка отправки в Chatzone: ${err.message}`);
     if (statusEl) {
       statusEl.style.color = 'var(--o3-red)';
-      statusEl.innerText = `❌ Ошибка: ${err.message} (убедитесь, что вы авторизованы в chatzone.o3t.ru)`;
+      statusEl.innerText = `Ошибка: ${err.message} (убедитесь, что вы авторизованы в chatzone.o3t.ru)`;
     }
     if (btnSend) btnSend.disabled = false;
   } finally {
@@ -1474,7 +1469,7 @@ async function triggerAssignTickets(section, customAlertIds = null) {
 
   st.isAssigning = true;
   updateAssignToolbarState(section);
-  setAssignStatusLine(section, `⏳ Назначение 0 из ${alertIds.length} док. на ${st.selectedOperator.fullName}...`);
+  setAssignStatusLine(section, `Назначение 0 из ${alertIds.length} док. на ${st.selectedOperator.fullName}...`);
 
   try {
     await ensureConnectionAndSend(tab.id, {
@@ -1485,7 +1480,7 @@ async function triggerAssignTickets(section, customAlertIds = null) {
   } catch (err) {
     st.isAssigning = false;
     updateAssignToolbarState(section);
-    setAssignStatusLine(section, `❌ Ошибка отправки команды: ${err.message}`, 'var(--o3-red)');
+    setAssignStatusLine(section, `Ошибка отправки команды: ${err.message}`, 'var(--o3-red)');
   }
 }
 
@@ -1515,7 +1510,7 @@ function applyLocalTicketAssignment(alertIds, operator, operatorInfo) {
   };
 
   const newlyAssignedDocs = [];
-  [rawOverdueDocs, rawDueTodayDocs].forEach(arr => {
+  [rawOverdueDocs, rawDatedDocs].forEach(arr => {
     arr.forEach(d => {
       if (updateDoc(d)) newlyAssignedDocs.push(d);
     });
@@ -1547,7 +1542,7 @@ function bindAssignSectionEvents(section) {
 
   if (chkAllEl) {
     chkAllEl.addEventListener('change', (e) => {
-      const docs = getSectionFilteredDocs(section);
+      const docs = filteredDeadlineDocs;
       st.selectedAlertIds.clear();
       if (e.target.checked) {
         docs.forEach(d => {
@@ -1555,7 +1550,7 @@ function bindAssignSectionEvents(section) {
           if (aid) st.selectedAlertIds.add(aid);
         });
       }
-      renderDeadlineAccordions();
+      renderDeadlinePanel();
     });
   }
 
@@ -1614,7 +1609,7 @@ function bindAssignSectionEvents(section) {
   if (btnPushEl) {
     btnPushEl.addEventListener('click', (e) => {
       e.preventDefault();
-      openPushModalForAlertIds(section, Array.from(st.selectedAlertIds));
+      openPushModalForAlertIds(Array.from(st.selectedAlertIds));
     });
   }
 
@@ -1647,7 +1642,7 @@ function bindAssignSectionEvents(section) {
         e.preventDefault();
         e.stopPropagation();
         const alertId = Number(pushSingleBtn.getAttribute('data-alert-id'));
-        if (alertId) openPushModalForAlertIds(section, [alertId]);
+        if (alertId) openPushModalForAlertIds([alertId]);
       }
     });
   }
@@ -1680,10 +1675,18 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg.type === 'DEADLINES_RESULT' && msg.payload) {
+    if (msg.payload.deadlineBatchId !== activeDeadlineBatch) return;
     isDeadlinesLoading = false;
-    isDueDateSingleLoading = false;
+    batchError = msg.payload.error || '';
+    if (batchError) {
+      renderDeadlinePanel();
+      return;
+    }
     rawOverdueDocs = msg.payload.overdueDocs || [];
-    rawDueTodayDocs = msg.payload.dueTodayDocs || [];
+    if (!activeDueRequest && msg.payload.todayYMD === targetDueYMD) {
+      rawDatedDocs = msg.payload.dueTodayDocs || [];
+      loadedDueYMD = msg.payload.todayYMD;
+    }
     rawAssignedDocs = msg.payload.assignedDocs || [];
     rawHoldDocs = msg.payload.onHoldDocs || [];
     populateDropdowns('executors');
@@ -1697,6 +1700,7 @@ chrome.runtime.onMessage.addListener((msg) => {
     rawClosedInternalRequestDocs = msg.payload.closedInternalRequests || [];
     rawInternalRequestsInWork = msg.payload.internalRequestsInWork || [];
     rawInternalRequestsOnHold = msg.payload.internalRequestsOnHold || [];
+    document.getElementById('internalRequestWarning').hidden = !msg.payload.error;
     if (msg.payload.error) addLog('warn', `Не удалось загрузить внутренние запросы: ${msg.payload.error}`);
     populateDropdowns('executors');
     populateDeadlineFilterOptions();
@@ -1725,12 +1729,14 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg.type === 'DUE_DATE_RESULT' && msg.payload) {
+    if (!activeDueRequest || msg.payload.requestId !== activeDueRequest || msg.payload.dueDateYMD !== targetDueYMD) return;
     isDueDateSingleLoading = false;
-    rawDueTodayDocs = msg.payload.dueTodayDocs || [];
-    ASSIGN_STATE.DueToday.selectedAlertIds.clear();
+    dueDateError = msg.payload.error || '';
+    loadedDueYMD = dueDateError ? '' : msg.payload.dueDateYMD;
+    rawDatedDocs = msg.payload.dueTodayDocs || [];
     populateDropdowns('executors');
     populateDeadlineFilterOptions();
-    renderDeadlineAccordions();
+    renderDeadlinePanel();
     return;
   }
   if (msg.type === 'SEARCH_OPERATORS_RESULT' && msg.payload) {
@@ -1747,7 +1753,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'ASSIGN_TICKETS_PROGRESS' && msg.payload) {
     const { section, current, total, alertID } = msg.payload;
-    setAssignStatusLine(section, `⏳ Назначение ${current} из ${total} (Ticket ID: ${alertID})...`);
+    setAssignStatusLine(section, `Назначение ${current} из ${total} (Ticket ID: ${alertID})...`);
     return;
   }
   if (msg.type === 'ASSIGN_TICKETS_RESULT' && msg.payload) {
@@ -1766,9 +1772,9 @@ chrome.runtime.onMessage.addListener((msg) => {
     }
 
     if (!failedItems || failedItems.length === 0) {
-      setAssignStatusLine(section, `✅ Назначено ${succeededAlertIds.length} док. на ${operator.fullName} (${operator.upn})`, 'var(--o3-green)');
+      setAssignStatusLine(section, `Назначено ${succeededAlertIds.length} док. на ${operator.fullName} (${operator.upn})`, 'var(--o3-green)');
     } else {
-      setAssignStatusLine(section, `⚠️ Назначено: ${succeededAlertIds.length}, ошибок: ${failedItems.length} (см. лог внизу)`, 'var(--o3-amber)');
+      setAssignStatusLine(section, `Назначено: ${succeededAlertIds.length}, ошибок: ${failedItems.length} (см. лог внизу)`, 'var(--o3-amber)');
     }
     setTimeout(() => {
       if (ASSIGN_STATE[section] && !ASSIGN_STATE[section].isAssigning) setAssignStatusLine(section, '');
@@ -1777,9 +1783,10 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.type === 'LIVE_ERROR') {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
-    if (mode === 'executors') {
+    if (mode === 'executors' && msg.payload.deadlineBatchId === activeDeadlineBatch) {
       isDeadlinesLoading = false;
-      isDueDateSingleLoading = false;
+      batchError = msg.payload.message || 'Не удалось загрузить документы из СЭД.';
+      renderDeadlinePanel();
     }
     const p = STATE[mode].prefix;
     showSkeleton(p, false);
@@ -1793,7 +1800,7 @@ function populateDropdowns(mode) {
   const st = STATE[mode];
   const p = st.prefix;
   const entities = new Set(), docTypes = new Set(), groups = new Set(), persons = new Set(), queues = new Set(), origins = new Set(), marks = new Set();
-  const documentSourceDocs = mode === 'executors' ? [...st.docs, ...rawOverdueDocs, ...rawDueTodayDocs, ...rawAssignedDocs, ...rawHoldDocs] : st.docs;
+  const documentSourceDocs = mode === 'executors' ? [...st.docs, ...rawOverdueDocs, ...rawDatedDocs, ...rawAssignedDocs, ...rawHoldDocs] : st.docs;
   const sourceDocs = mode === 'executors' ? [...documentSourceDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
 
   documentSourceDocs.forEach(d => {
@@ -1833,7 +1840,7 @@ function makePairedMetricValue(docsArr, title, sub, kind, shortLabel, tooltipLab
   const key = `as_${++cellSeq}`;
   drillStore.set(key, { docs: docsArr, title, sub, mode: 'executors' });
   if (tooltipLabel) assignedTooltipStore.set(key, { docs: docsArr, label: tooltipLabel });
-  return `<span class="cell-btn assigned-btn paired-metric ${kind}" data-drill="${key}" ${tooltipLabel ? `data-assigned-tip="${key}"` : ''}>${cnt} ${shortLabel}</span>`;
+  return `<span class="cell-btn paired-metric ${kind}" data-drill="${key}" ${tooltipLabel ? `data-assigned-tip="${key}"` : ''}>${cnt} ${shortLabel}</span>`;
 }
 
 function makePairedStatusCell(documentItems, requestItems, loadingRequests, title, sub, statusLabel) {
@@ -1862,7 +1869,7 @@ function renderWidgetTable(mode) {
   const isExec = (mode === 'executors');
 
   if (isExec) {
-    renderDeadlineAccordions();
+    renderDeadlinePanel();
     assignedTooltipStore.clear();
   }
 
@@ -2025,7 +2032,7 @@ function renderWidgetTable(mode) {
   const headerRowSpan = `rowspan="${headerDepth}"`;
   let headerHtml = `<tr>
     <th class="sticky-col" ${headerRowSpan} title="Потяните за правый край столбца для изменения ширины">
-      Группа / ${st.roleTitle} / Тип док. (${dateRu})
+      Группа / ${st.roleTitle} (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
     ${isExec ? `<th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом В работе на текущий момент">В работе<br><small>на сейчас · док. / зап.</small></th><th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом На удержании на текущий момент">На удержании<br><small>на сейчас · док. / зап.</small></th>` : ''}
@@ -2055,50 +2062,73 @@ function renderWidgetTable(mode) {
     return base + marks;
   }
 
-  function renderBreakdownZeros() {
-    if (!st.isTotalsBreakdownExpanded) return '';
-    return Array.from({ length: 2 + (hasMarkChildren ? sortedMarks.length : 0) }, () => '<td class="cell-zero">0</td>').join('');
+  const markColumns = st.isTotalsBreakdownExpanded ? 2 + (hasMarkChildren ? sortedMarks.length : 0) : 0;
+  const tableColumns = (isExec ? 5 : 2) + markColumns;
+
+  function detailHeading(label, icon, message = '') {
+    return `<tr class="detail-section">
+      <td class="sticky-col"><strong><span aria-hidden="true">${icon}</span>${label}</strong></td>
+      <td colspan="${tableColumns - 1}">${message}</td></tr>`;
+  }
+
+  function detailStatusCells(assigned, onHold, closed, title, subtitle, unit) {
+    if (!isExec) return '';
+    const kind = 'detail-metric';
+    const name = unit === 'док.' ? 'Документы' : 'Запросы';
+    return `<td>${makePairedMetricValue(assigned, title, subtitle, kind, unit, name + ' в работе')}</td>
+      <td>${makePairedMetricValue(onHold, title, subtitle, kind, unit, name + ' на удержании')}</td>
+      <td>${makePairedMetricValue(closed, title, subtitle + ' · закрыто за ' + dateRu, kind, unit)}</td>`;
   }
 
   const expRows = [];
   let html = '';
 
-  function renderInternalRequestThemeRows(requestDocs, contextLabel) {
-    const themes = new Map();
-    (requestDocs || []).forEach(d => {
-      const theme = getInternalRequestTheme(d);
-      if (!themes.has(theme)) themes.set(theme, { closed: [], assigned: [], onHold: [] });
-      const entry = themes.get(theme);
-      const status = d.ticket && d.ticket.status;
-      if (status === 'CLOSED') entry.closed.push(d);
-      else if (status === 'ASSIGNED') entry.assigned.push(d);
-      else if (status === 'ON_HOLD') entry.onHold.push(d);
-    });
-    const sortedThemes = Array.from(themes.entries()).sort((a, b) =>
-      (b[1].closed.length + b[1].assigned.length + b[1].onHold.length) -
-      (a[1].closed.length + a[1].assigned.length + a[1].onHold.length)
-    );
-    return sortedThemes.map(([theme, counts]) => {
+  function renderRequestBreakdown(requestDocs, contextLabel) {
+    const categories = new Map();
+    for (const doc of requestDocs) {
+      const category = doc.categoryName || 'Без категории';
+      const theme = getInternalRequestTheme(doc);
+      if (!categories.has(category)) categories.set(category, { docs: [], themes: new Map() });
+      const entry = categories.get(category);
+      entry.docs.push(doc);
+      if (!entry.themes.has(theme)) entry.themes.set(theme, []);
+      entry.themes.get(theme).push(doc);
+    }
+
+    function renderRequestRow(category, theme, docs) {
+      const closed = docs.filter(d => d.ticket.status === 'CLOSED');
+      const assigned = docs.filter(d => d.ticket.status === 'ASSIGNED');
+      const onHold = docs.filter(d => d.ticket.status === 'ON_HOLD');
+      const name = theme || category;
+      const label = theme ? `${category} · ${theme}` : category;
       expRows.push({
         'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu,
-        'Группа': contextLabel, [st.roleTitle]: '[ТЕМА ВНУТРЕННЕГО ЗАПРОСА]',
-        'Тема_Внутреннего_Запроса': theme,
-        ...(isExec ? {
-          'В_Работе_ASSIGNED': counts.assigned.length,
-          'На_Удержании_ON_HOLD': counts.onHold.length,
-          'Внутренние_Запросы_Закрыто': counts.closed.length
-        } : {}),
-        'Всего': 0, 'Без_Метки': 0, 'С_Меткой_Всего': 0
+        'Группа': contextLabel, [st.roleTitle]: theme ? '[ТЕМА ЗАПРОСА]' : '[КАТЕГОРИЯ ЗАПРОСА]',
+        'Категория_Внутреннего_Запроса': category, 'Тема_Внутреннего_Запроса': theme,
+        'В_Работе_ASSIGNED': assigned.length, 'На_Удержании_ON_HOLD': onHold.length,
+        'Внутренние_Запросы_Закрыто': closed.length, 'Всего': 0, 'Без_Метки': 0, 'С_Меткой_Всего': 0
       });
-      return `<tr class="doctype-row request-theme-row">
-        <td class="sticky-col">↳ Тема: ${escapeHtml(theme)}</td>
-        ${isExec ? makePairedStatusCell([], counts.assigned, isInternalRequestsLoading, theme, contextLabel, 'в работе (на сейчас)') : ''}
-        ${isExec ? makePairedStatusCell([], counts.onHold, isInternalRequestsLoading, theme, contextLabel, 'на удержании (на сейчас)') : ''}
-        ${isExec ? makePairedClosedCell([], counts.closed, isInternalRequestsLoading, theme, contextLabel, dateRu) : ''}
-        <td class="cell-zero">0</td>
-        ${renderBreakdownZeros()}
-      </tr>`;
+      return `<tr class="doctype-row ${theme ? 'request-theme-row' : 'request-category-row'}">
+        <td class="sticky-col" title="${escapeHtml(label)}">${theme ? 'Тема' : 'Категория'} · ${escapeHtml(name)}</td>
+        ${detailStatusCells(assigned, onHold, closed, label, contextLabel, 'запр.')}
+        <td class="detail-na" colspan="${1 + markColumns}" title="Только для документов">—</td></tr>`;
+    }
+
+    const message = isInternalRequestsLoading ? 'Загрузка…' : (categories.size ? '' : 'Нет запросов');
+    const heading = detailHeading('Запросы', CHATZONE_ICON_SVG, message);
+    return heading + Array.from(categories).sort((a, b) => b[1].docs.length - a[1].docs.length || a[0].localeCompare(b[0], 'ru')).map(([category, { docs, themes }]) => {
+      const categoryRow = renderRequestRow(category, '', docs);
+      const themeRows = Array.from(themes).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], 'ru'))
+        .map(([theme, items]) => renderRequestRow(category, theme, items));
+      return categoryRow + themeRows.join('');
     }).join('');
+  }
+
+  function detailControls(docAction, docKey, docsOpen, requestKey, requestsOpen) {
+    const attribute = `${docAction}="${escapeHtml(docKey)}"`;
+    const doc = `<button type="button" class="tree-detail-control" ${attribute} aria-label="Документы" title="Документы · типы документов" aria-expanded="${docsOpen}"><span aria-hidden="true">${DOC_ICON_SVG}</span></button>`;
+    const request = isExec ? `<button type="button" class="tree-detail-control" data-request-themes="${escapeHtml(requestKey)}" aria-label="Запросы" title="Запросы · категории и темы" aria-expanded="${requestsOpen}"><span aria-hidden="true">${CHATZONE_ICON_SVG}</span></button>` : '';
+    return `<span class="tree-detail-controls">${doc}${request}</span>`;
   }
 
   const allInternalRequests = [...filteredInternalRequests, ...filteredInternalRequestsInWork, ...filteredInternalRequestsOnHold];
@@ -2127,7 +2157,7 @@ function renderWidgetTable(mode) {
     expRows.push(gExp);
 
     html += `<tr class="group-row">
-      <td class="sticky-col" data-grp="${g.groupName}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span><span class="tree-detail-controls"><button class="tree-detail-control" data-grp-types="${g.groupName}" title="Раскрыть типы документов группы">${isGroupTypesExpanded ? '▾ типы' : '▸ типы'}</button>${isExec ? `<button class="tree-detail-control" data-request-themes="${groupRequestKey}" title="Раскрыть внутренние запросы группы по теме">${isGroupRequestsExpanded ? '▾ темы' : '▸ темы'}</button>` : ''}</span></td>
+      <td class="sticky-col" data-grp="${escapeHtml(g.groupName)}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span>${detailControls('data-grp-types', g.groupName, !isCol && isGroupTypesExpanded, groupRequestKey, !isCol && isGroupRequestsExpanded)}</td>
       ${isExec ? makePairedStatusCell(g.assigned, g.internalRequestsInWork, isInternalRequestsLoading, `Группа: ${g.groupName}`, 'Документы и внутренние запросы', 'в работе (на сейчас)') : ''}
       ${isExec ? makePairedStatusCell(g.onHold, g.internalRequestsOnHold, isInternalRequestsLoading, `Группа: ${g.groupName}`, 'Документы и внутренние запросы', 'на удержании (на сейчас)') : ''}
       ${isExec ? makePairedClosedCell(g.all, g.internalRequests, isInternalRequestsLoading, `Группа: ${g.groupName}`, 'Итого', dateRu) : ''}
@@ -2135,9 +2165,8 @@ function renderWidgetTable(mode) {
       ${renderBreakdownCells(g.noMark, g.withMarks, g.byMark, `Группа: ${g.groupName}`, '')}
     </tr>`;
 
-    if (!isCol && isGroupRequestsExpanded) html += renderInternalRequestThemeRows(groupRequests, `Группа: ${g.groupName}`);
-
     if (!isCol && isGroupTypesExpanded) {
+      html += detailHeading('Документы', DOC_ICON_SVG, groupDocTypes.length ? '' : 'Нет документов');
       groupDocTypes.forEach(dt => {
         const row = {
           'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
@@ -2147,10 +2176,11 @@ function renderWidgetTable(mode) {
         };
         sortedMarks.forEach(m => { row[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
         expRows.push(row);
-        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makePairedStatusCell(dt.assigned, [], false, `Группа: ${g.groupName} · ${dt.docType}`, 'Документы этого типа', 'в работе (на сейчас)') : ''}${isExec ? makePairedStatusCell(dt.onHold, [], false, `Группа: ${g.groupName} · ${dt.docType}`, 'Документы этого типа', 'на удержании (на сейчас)') : ''}${isExec ? makePairedClosedCell(dt.all, [], false, `Группа: ${g.groupName} · ${dt.docType}`, 'Документы этого типа', dateRu) : ''}${makeDrillCell(dt.all, `Группа: ${g.groupName} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `Группа: ${g.groupName} · ${dt.docType}`, '')}</tr>`;
+        html += `<tr class="doctype-row"><td class="sticky-col" title="${escapeHtml(dt.docType)}">${escapeHtml(dt.docType)}</td>${detailStatusCells(dt.assigned, dt.onHold, dt.all, `Группа: ${g.groupName} · ${dt.docType}`, 'Документы этого типа', 'док.')}${makeDrillCell(dt.all, `Группа: ${g.groupName} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `Группа: ${g.groupName} · ${dt.docType}`, '')}</tr>`;
       });
     }
 
+    if (!isCol && isGroupRequestsExpanded) html += renderRequestBreakdown(groupRequests, `Группа: ${g.groupName}`);
     if (!isCol) {
       sortedUsers.forEach(u => {
         const userKey = `${g.groupName}__${u.person}`;
@@ -2175,12 +2205,12 @@ function renderWidgetTable(mode) {
         expRows.push(uExp);
 
         const personDisplayHtml = u.person === 'Не назначен'
-          ? `<span style="color:var(--o3-red); font-weight:700;">🚨 Не назначен</span>`
+          ? `<span style="color:var(--o3-red); font-weight:700;">Не назначен</span>`
           : u.person;
 
         html += `<tr class="operator-row">
-          <td class="sticky-col" data-usr="${userKey}" title="Нажмите, чтобы раскрыть по типам документа (${u.person})">
-            <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}<span class="tree-detail-controls"><button class="tree-detail-control" data-usr="${userKey}" title="Раскрыть типы документов сотрудника">${isUserExp ? '▾ типы' : '▸ типы'}</button>${isExec ? `<button class="tree-detail-control" data-request-themes="${userRequestKey}" title="Раскрыть внутренние запросы сотрудника по теме">${isUserRequestsExpanded ? '▾ темы' : '▸ темы'}</button>` : ''}</span>
+          <td class="sticky-col" data-usr="${escapeHtml(userKey)}" title="Развернуть детализацию сотрудника">
+            <span style="color:var(--o3-text-muted); font-size:10px; margin-right:4px;">${isUserExp || isUserRequestsExpanded ? '▼' : '▶'}</span>${personDisplayHtml}${actionsHtml}${statusRender.html}${detailControls('data-usr-types', userKey, isUserExp, userRequestKey, isUserRequestsExpanded)}
           </td>
       ${isExec ? makePairedStatusCell(u.assigned, u.internalRequestsInWork, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, 'в работе (на сейчас)') : ''}
       ${isExec ? makePairedStatusCell(u.onHold, u.internalRequestsOnHold, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, 'на удержании (на сейчас)') : ''}
@@ -2189,9 +2219,8 @@ function renderWidgetTable(mode) {
           ${renderBreakdownCells(u.noMark, u.withMarks, u.byMark, u.person, `Группа: ${g.groupName} · `)}
         </tr>`;
 
-        if (isUserRequestsExpanded) html += renderInternalRequestThemeRows(userRequests, `${g.groupName} · ${u.person}`);
-
         if (isUserExp) {
+          html += detailHeading('Документы', DOC_ICON_SVG, sortedDocTypes.length ? '' : 'Нет документов');
           sortedDocTypes.forEach(dt => {
             const dtExp = {
               'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
@@ -2203,15 +2232,14 @@ function renderWidgetTable(mode) {
             expRows.push(dtExp);
 
             html += `<tr class="doctype-row">
-              <td class="sticky-col" title="Тип документа: ${dt.docType}">↳ ${dt.docType}</td>
-              ${isExec ? makePairedStatusCell(dt.assigned, [], false, `${u.person} · ${dt.docType}`, 'Документы этого типа', 'в работе (на сейчас)') : ''}
-              ${isExec ? makePairedStatusCell(dt.onHold, [], false, `${u.person} · ${dt.docType}`, 'Документы этого типа', 'на удержании (на сейчас)') : ''}
-              ${isExec ? makePairedClosedCell(dt.all, [], false, `${u.person} · ${dt.docType}`, 'Документы этого типа', dateRu) : ''}
+              <td class="sticky-col" title="${escapeHtml(dt.docType)}">${escapeHtml(dt.docType)}</td>
+              ${detailStatusCells(dt.assigned, dt.onHold, dt.all, `${u.person} · ${dt.docType}`, 'Документы этого типа', 'док.')}
               ${makeDrillCell(dt.all, `${u.person} · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}
               ${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `${u.person} · ${dt.docType}`, `Группа: ${g.groupName} · `)}
             </tr>`;
           });
         }
+        if (isUserRequestsExpanded) html += renderRequestBreakdown(userRequests, `${g.groupName} · ${u.person}`);
       });
     }
   });
@@ -2229,7 +2257,7 @@ function renderWidgetTable(mode) {
     expRows.push(totExp);
 
     html += `<tr class="total-row">
-      <td class="sticky-col">ИТОГО ЗА ${dateRu}<span class="tree-detail-controls"><button class="tree-detail-control" data-total-types title="Раскрыть типы документов общего итога">${st.totalDocTypesExpanded ? '▾ типы' : '▸ типы'}</button>${isExec ? `<button class="tree-detail-control" data-request-themes="total" title="Раскрыть внутренние запросы по теме">${st.totalRequestThemesExpanded ? '▾ темы' : '▸ темы'}</button>` : ''}</span></td>
+      <td class="sticky-col">ИТОГО ЗА ${dateRu}${detailControls('data-total-types', '', st.totalDocTypesExpanded, 'total', st.totalRequestThemesExpanded)}</td>
       ${isExec ? makePairedStatusCell(grandAssigned, filteredInternalRequestsInWork, isInternalRequestsLoading, 'Все подразделения', 'Общий итог', 'в работе (на сейчас)') : ''}
       ${isExec ? makePairedStatusCell(filteredOnHold, filteredInternalRequestsOnHold, isInternalRequestsLoading, 'Все подразделения', 'Общий итог', 'на удержании (на сейчас)') : ''}
       ${isExec ? makePairedClosedCell(filtered, filteredInternalRequests, isInternalRequestsLoading, 'Все подразделения', 'Общий итог', dateRu) : ''}
@@ -2237,9 +2265,8 @@ function renderWidgetTable(mode) {
       ${renderBreakdownCells(grandNoMark, grandWithMarks, grandByMark, `Общий итог за ${dateRu}`, '')}
     </tr>`;
 
-    if (st.totalRequestThemesExpanded) html += renderInternalRequestThemeRows(allInternalRequests, 'Общий итог');
-
     if (st.totalDocTypesExpanded) {
+      html += detailHeading('Документы', DOC_ICON_SVG, grandDocTypes.length ? '' : 'Нет документов');
       grandDocTypes.forEach(dt => {
         const row = {
           'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
@@ -2249,12 +2276,12 @@ function renderWidgetTable(mode) {
         };
         sortedMarks.forEach(m => { row[`Метка: ${m}`] = (dt.byMark[m] || []).length; });
         expRows.push(row);
-        html += `<tr class="doctype-row"><td class="sticky-col">↳ ${dt.docType}</td>${isExec ? makePairedStatusCell(dt.assigned, [], false, `Все подразделения · ${dt.docType}`, 'Документы этого типа', 'в работе (на сейчас)') : ''}${isExec ? makePairedStatusCell(dt.onHold, [], false, `Все подразделения · ${dt.docType}`, 'Документы этого типа', 'на удержании (на сейчас)') : ''}${isExec ? makePairedClosedCell(dt.all, [], false, `Общий итог · ${dt.docType}`, 'Документы этого типа', dateRu) : ''}${makeDrillCell(dt.all, `Общий итог · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `Общий итог · ${dt.docType}`, '')}</tr>`;
+        html += `<tr class="doctype-row"><td class="sticky-col" title="${escapeHtml(dt.docType)}">${escapeHtml(dt.docType)}</td>${detailStatusCells(dt.assigned, dt.onHold, dt.all, `Все подразделения · ${dt.docType}`, 'Документы этого типа', 'док.')}${makeDrillCell(dt.all, `Общий итог · ${dt.docType}`, `Все документы типа «${dt.docType}» за ${dateRu}`, mode)}${renderBreakdownCells(dt.noMark, dt.withMarks, dt.byMark, `Общий итог · ${dt.docType}`, '')}</tr>`;
       });
     }
+    if (st.totalRequestThemesExpanded) html += renderRequestBreakdown(allInternalRequests, 'Общий итог');
   } else {
-    const colSpan = 1 + (isExec ? 3 : 0) + 1 + (st.isTotalsBreakdownExpanded ? 2 + (hasMarkChildren ? sortedMarks.length : 0) : 0);
-    html = `<tr><td colspan="${colSpan}" style="padding:28px; color:var(--o3-text-sec);">За ${dateRu} документов по выбранным фильтрам не найдено.</td></tr>`;
+    html = `<tr><td colspan="${tableColumns}" style="padding:28px; color:var(--o3-text-sec);">За ${dateRu} документов по выбранным фильтрам не найдено.</td></tr>`;
   }
 
   tbody.innerHTML = html;
@@ -2427,8 +2454,9 @@ function bindWidgetEvents(mode) {
       const key = requestThemes.getAttribute('data-request-themes');
       if (key === 'total') st.totalRequestThemesExpanded = !st.totalRequestThemesExpanded;
       else if (key.startsWith('group:')) {
-        if (st.expandedGroupRequestThemes.has(key)) st.expandedGroupRequestThemes.delete(key);
+        if (!st.collapsedGroups.has(decodeURIComponent(key.slice(6))) && st.expandedGroupRequestThemes.has(key)) st.expandedGroupRequestThemes.delete(key);
         else st.expandedGroupRequestThemes.add(key);
+        st.collapsedGroups.delete(decodeURIComponent(key.slice(6)));
       } else if (key.startsWith('user:')) {
         if (st.expandedUserRequestThemes.has(key)) st.expandedUserRequestThemes.delete(key);
         else st.expandedUserRequestThemes.add(key);
@@ -2450,7 +2478,9 @@ function bindWidgetEvents(mode) {
     if (grpTypes) {
       e.stopPropagation();
       const gName = grpTypes.getAttribute('data-grp-types');
-      if (st.expandedGroupDocTypes.has(gName)) st.expandedGroupDocTypes.delete(gName);
+      const wasVisible = !st.collapsedGroups.has(gName) && st.expandedGroupDocTypes.has(gName);
+      st.collapsedGroups.delete(gName);
+      if (wasVisible) st.expandedGroupDocTypes.delete(gName);
       else st.expandedGroupDocTypes.add(gName);
       renderWidgetTable(mode);
       return;
@@ -2464,16 +2494,27 @@ function bindWidgetEvents(mode) {
     const grp = e.target.closest('[data-grp]');
     if (grp) {
       const gName = grp.getAttribute('data-grp');
-      if (st.collapsedGroups.has(gName)) st.collapsedGroups.delete(gName);
-      else st.collapsedGroups.add(gName);
+      if (st.collapsedGroups.has(gName)) {
+        st.collapsedGroups.delete(gName);
+        st.expandedGroupDocTypes.add(gName);
+        if (mode === 'executors') st.expandedGroupRequestThemes.add('group:' + encodeURIComponent(gName));
+      } else st.collapsedGroups.add(gName);
       renderWidgetTable(mode);
       return;
     }
+    const docTypes = e.target.closest('[data-usr-types]');
     const usr = e.target.closest('[data-usr]');
     if (usr) {
-      const uKey = usr.getAttribute('data-usr');
-      if (st.expandedUsers.has(uKey)) st.expandedUsers.delete(uKey);
-      else st.expandedUsers.add(uKey);
+      const userKey = usr.getAttribute('data-usr');
+      const requestKey = 'user:' + encodeURIComponent(userKey);
+      const both = !docTypes && mode === 'executors';
+      const open = st.expandedUsers.has(userKey) && (!both || st.expandedUserRequestThemes.has(requestKey));
+      if (open) st.expandedUsers.delete(userKey);
+      else st.expandedUsers.add(userKey);
+      if (both) {
+        if (open) st.expandedUserRequestThemes.delete(requestKey);
+        else st.expandedUserRequestThemes.add(requestKey);
+      }
       renderWidgetTable(mode);
       return;
     }
@@ -2489,13 +2530,27 @@ function bindWidgetEvents(mode) {
   document.getElementById(`${p}BtnToggleDocTypes`).onclick = () => {
     st.allUsersExpanded = !st.allUsersExpanded;
     st.totalDocTypesExpanded = st.allUsersExpanded;
+    st.totalRequestThemesExpanded = mode === 'executors' && st.allUsersExpanded;
+    const label = mode === 'executors' ? 'документы и запросы' : 'документы';
+    document.getElementById(`${p}BtnToggleDocTypes`).textContent = `${st.allUsersExpanded ? 'Свернуть' : 'Развернуть'} ${label}`;
     if (st.allUsersExpanded) {
       const allSource = mode === 'executors' ? [...st.docs, ...rawAssignedDocs, ...rawHoldDocs, ...rawClosedInternalRequestDocs, ...rawInternalRequestsInWork, ...rawInternalRequestsOnHold] : st.docs;
-      allSource.forEach(d => st.expandedUsers.add(`${getGroupByMode(d, mode)}__${getPersonByMode(d, mode)}`));
-      allSource.forEach(d => st.expandedGroupDocTypes.add(getGroupByMode(d, mode)));
+      st.collapsedGroups.clear();
+      allSource.forEach(d => {
+        const group = getGroupByMode(d, mode);
+        const user = `${group}__${getPersonByMode(d, mode)}`;
+        st.expandedUsers.add(user);
+        st.expandedGroupDocTypes.add(group);
+        if (mode === 'executors' && d.isInternalRequest) {
+          st.expandedGroupRequestThemes.add('group:' + encodeURIComponent(group));
+          st.expandedUserRequestThemes.add('user:' + encodeURIComponent(user));
+        }
+      });
     } else {
       st.expandedUsers.clear();
       st.expandedGroupDocTypes.clear();
+      st.expandedGroupRequestThemes.clear();
+      st.expandedUserRequestThemes.clear();
     }
     renderWidgetTable(mode);
   };
@@ -2506,6 +2561,12 @@ function bindWidgetEvents(mode) {
   document.getElementById(`${p}BtnStop`).onclick = async () => {
     const tab = await findSedTab();
     if (tab) chrome.tabs.sendMessage(tab.id, { target: 'INJECTOR', type: 'STOP_FETCH' }).catch(() => {});
+    if (mode === 'executors') {
+      activeDeadlineBatch = '';
+      isDeadlinesLoading = false;
+      batchError = 'Обновление остановлено.';
+      renderDeadlinePanel();
+    }
     setProgress(p, false);
     showSkeleton(p, false);
   };
@@ -2541,6 +2602,10 @@ function bindWidgetEvents(mode) {
 
 function activateWidgetTab(mode) {
   const isReg = (mode === 'registrars');
+  document.getElementById('exHeaderActions').hidden = isReg;
+  document.getElementById('rgHeaderActions').hidden = !isReg;
+  document.getElementById('tabExecutors').setAttribute('aria-pressed', String(!isReg));
+  document.getElementById('tabRegistrars').setAttribute('aria-pressed', String(isReg));
   document.getElementById('tabExecutors').classList.toggle('active', !isReg);
   document.getElementById('tabRegistrars').classList.toggle('active', isReg);
   document.getElementById('widgetExecutors').style.display = isReg ? 'none' : 'block';
@@ -2559,7 +2624,7 @@ document.getElementById('drSearch').addEventListener('input', (e) => renderDrawe
 
 function downloadCsv(filename, rows) {
   if (!rows || !rows.length) return alert('Нет данных для выгрузки!');
-  const headers = Object.keys(rows[0]);
+  const headers = Array.from(new Set(rows.flatMap(row => Object.keys(row))));
   const csvContent = [
     headers.join(';'),
     ...rows.map(row => headers.map(h => `"${String(row[h] ?? '').replace(/"/g, '""')}"`).join(';'))
@@ -2601,24 +2666,10 @@ function exportAlertDocsCsv(docs, filename) {
   downloadCsv(filename, rows);
 }
 
-const btnCsvOverEl = document.getElementById('btnCsvOverdue');
-if (btnCsvOverEl) {
-  btnCsvOverEl.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    exportAlertDocsCsv(filteredOverdueDocs, 'sed_overdue_documents.csv');
-  };
-}
-
-const btnCsvTodayEl = document.getElementById('btnCsvDueToday');
-if (btnCsvTodayEl) {
-  btnCsvTodayEl.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const dueDt = (document.getElementById('dueTargetDate') && document.getElementById('dueTargetDate').value) || 'today';
-    exportAlertDocsCsv(filteredDueTodayDocs, `sed_due_${dueDt}_documents.csv`);
-  };
-}
+document.getElementById('btnCsvDeadline').onclick = () => {
+  const scope = deadlinePeriod === 'overdue' ? 'overdue' : 'due_' + targetDueYMD;
+  exportAlertDocsCsv(filteredDeadlineDocs, `sed_${scope}_documents.csv`);
+};
 
 document.getElementById('btnDrCsv').onclick = () => {
   const rows = activeDrawerDocs.map(d => {
@@ -2668,7 +2719,7 @@ async function checkForGithubUpdates() {
   const localVersion = chrome.runtime.getManifest().version;
   const btnReload = document.getElementById('btnReloadExt');
   if (btnReload) {
-    btnReload.innerText = `⚡ v${localVersion}`;
+    btnReload.innerText = `v${localVersion}`;
     btnReload.onclick = () => chrome.runtime.reload();
   }
   const btnApply = document.getElementById('btnApplyUpdate');
@@ -2686,7 +2737,7 @@ async function checkForGithubUpdates() {
       const banner = document.getElementById('updateBanner');
       const textEl = document.getElementById('updateBannerText');
       if (banner && textEl) {
-        textEl.innerText = `🚀 Доступна новая версия v${remoteVersion} (у вас v${localVersion})! Запустите update.bat в папке расширения и нажмите кнопку справа →`;
+        textEl.innerText = `Доступна новая версия v${remoteVersion} (у вас v${localVersion})! Запустите update.bat в папке расширения и нажмите кнопку справа →`;
         banner.style.display = 'flex';
       }
     }
@@ -2695,7 +2746,6 @@ async function checkForGithubUpdates() {
 
 (function init() {
   initCustomDimensions();
-  bindSyncAccordions();
   bindPushModalEvents();
 
   const savedTheme = localStorage.getItem('o3_sed_theme') || 'light';
@@ -2706,18 +2756,12 @@ async function checkForGithubUpdates() {
   document.getElementById('exDate').value = ymd;
   document.getElementById('rgDate').value = ymd;
 
-  const dueDateEl = document.getElementById('dueTargetDate');
-  if (dueDateEl) {
-    dueDateEl.value = ymd;
-    dueDateEl.addEventListener('click', (e) => e.stopPropagation());
-    dueDateEl.addEventListener('change', () => fetchCustomDueDateOnly());
-  }
+  document.getElementById('dueTargetDate').value = moscowDate();
 
   bindWidgetEvents('executors');
   bindWidgetEvents('registrars');
   bindDeadlineFilterControls();
-  bindAssignSectionEvents('Overdue');
-  bindAssignSectionEvents('DueToday');
+  bindAssignSectionEvents('Deadline');
 
   checkForGithubUpdates();
 

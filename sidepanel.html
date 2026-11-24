@@ -2,59 +2,77 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ozon Банк · СЭД Онлайн-Дашборды</title>
   <style>
     :root {
-      --first-col-width: 310px;
+      --first-col-width: 270px;
       --table-height: 480px;
       --drawer-width: 460px;
-      --o3-blue: #005BFF;
-      --o3-blue-hover: #004ECC;
-      --o3-blue-light: #EBF2FF;
-      --o3-text: #001A34;
-      --o3-text-sec: #5C6B7A;
-      --o3-text-muted: #8A99A8;
-      --o3-bg: #F2F5F9;
+      --o3-brand: #005BFF;
+      --o3-brand-hover: #0049D1;
+      --o3-on-brand: #FFFFFF;
+      --o3-blue: var(--o3-brand);
+      --o3-blue-hover: var(--o3-brand-hover);
+      --o3-blue-light: #E5F0FF;
+      --o3-blue-tint-hover: #D0E3FF;
+      --o3-pink: #E11D68;
+      --o3-pink-text: #BA1252;
+      --o3-pink-light: #FFEAF2;
+      --o3-text: #071026;
+      --o3-text-sec: #44546A;
+      --o3-text-muted: #56697F;
+      --o3-bg: #F5F7FA;
       --o3-surface: #FFFFFF;
       --o3-surface-elevated: #FFFFFF;
-      --o3-surface-hover: #F5F7FA;
-      --o3-group-bg: #F2F6FC;
-      --o3-doctype-bg: #FAFBFD;
-      --o3-border: #D5DCE6;
-      --o3-border-light: #EDF0F4;
-      --o3-green: #059669;
-      --o3-red: #F91155;
-      --o3-amber: #D97706;
-      --o3-shadow: 0 4px 20px rgba(0, 26, 52, 0.08);
-      --o3-dropdown-shadow: 0 8px 28px rgba(0, 26, 52, 0.14);
+      --o3-surface-hover: #F2F4F8;
+      --o3-group-bg: #EDF4FF;
+      --o3-doctype-bg: #F8FAFD;
+      --o3-border: #D6E1EF;
+      --o3-border-light: #E6ECF3;
+      --o3-green: #08734D;
+      --o3-green-light: #E3F6EE;
+      --o3-red: #BF321F;
+      --o3-red-light: #FBECE9;
+      --o3-amber: #895000;
+      --o3-amber-light: #FFF2D8;
+      --o3-shadow: 0 1px 2px rgba(7, 16, 38, .04);
+      --o3-dropdown-shadow: 0 8px 28px rgba(0, 26, 52, .14);
     }
 
     body[data-theme="dark"] {
-      --o3-blue: #2B7BFF;
-      --o3-blue-hover: #478EFF;
-      --o3-blue-light: rgba(43, 123, 255, 0.16);
-      --o3-text: #F2F4F7;
-      --o3-text-sec: #98A2B3;
-      --o3-text-muted: #667085;
-      --o3-bg: #121417;
-      --o3-surface: #1B1E23;
-      --o3-surface-elevated: #262930;
-      --o3-surface-hover: #2E323B;
-      --o3-group-bg: #20252E;
-      --o3-doctype-bg: #171A1E;
-      --o3-border: #343942;
-      --o3-border-light: #262A32;
-      --o3-green: #10B981;
-      --o3-red: #FB7185;
-      --o3-amber: #FBBF24;
-      --o3-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-      --o3-dropdown-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+      --o3-blue: #89B8FF;
+      --o3-blue-hover: #AFD0FF;
+      --o3-blue-light: #162F54;
+      --o3-blue-tint-hover: #21406C;
+      --o3-pink: #FF76A8;
+      --o3-pink-text: #FF95BB;
+      --o3-pink-light: #452238;
+      --o3-text: #EFF5FF;
+      --o3-text-sec: #B7C7DC;
+      --o3-text-muted: #A0B2C9;
+      --o3-bg: #0D1726;
+      --o3-surface: #141F30;
+      --o3-surface-elevated: #1B293D;
+      --o3-surface-hover: #233349;
+      --o3-group-bg: #192D47;
+      --o3-doctype-bg: #172536;
+      --o3-border: #354961;
+      --o3-border-light: #2A394D;
+      --o3-green: #74D6AD;
+      --o3-green-light: #183B32;
+      --o3-red: #FF9A88;
+      --o3-red-light: #452A2B;
+      --o3-amber: #FFCF78;
+      --o3-amber-light: #41351F;
+      --o3-shadow: 0 4px 20px rgba(0, 0, 0, .35);
+      --o3-dropdown-shadow: 0 10px 32px rgba(0, 0, 0, .55);
     }
 
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      margin: 0; padding: 14px; font-size: 12.5px; color: var(--o3-text); background: var(--o3-bg);
+      margin: 0; padding: 8px; font-size: 12px; color: var(--o3-text); background: var(--o3-bg);
       font-variant-numeric: tabular-nums; transition: background 0.15s, color 0.15s, padding-right 0.15s;
     }
     body.drawer-open {
@@ -62,10 +80,10 @@
     }
 
     .header-row {
-      display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px;
     }
     .widget-switcher {
-      flex: 1; display: flex; background: var(--o3-border-light); border-radius: 10px; padding: 3px; gap: 3px;
+      flex: 1 1 200px; max-width: 360px; display: flex; background: var(--o3-border-light); border-radius: 10px; padding: 3px; gap: 3px;
     }
     .w-tab {
       flex: 1; padding: 8px 10px; border: none; border-radius: 8px; cursor: pointer;
@@ -73,8 +91,8 @@
       transition: all 0.15s ease; text-align: center;
     }
     .w-tab.active {
-      background: var(--o3-surface); color: var(--o3-blue);
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+      background: var(--o3-brand); color: var(--o3-on-brand);
+      box-shadow: var(--o3-shadow);
     }
     .theme-btn {
       padding: 8px 12px; border: 1px solid var(--o3-border); border-radius: 10px;
@@ -83,19 +101,13 @@
     }
     .theme-btn:hover { border-color: var(--o3-blue); }
 
-    .topbar {
-      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;
-    }
-    .brand { display: flex; align-items: center; gap: 8px; }
+    .brand { display: flex; align-items: center; gap: 6px; color: var(--o3-text); font-size: 14px; }
     .brand-logo {
-      background: var(--o3-blue); color: #fff; font-weight: 800; font-size: 12px;
+      background: var(--o3-brand); color: var(--o3-on-brand); font-weight: 800; font-size: 12px;
       padding: 5px 8px; border-radius: 7px; letter-spacing: 0.4px;
     }
-    .brand-logo.reg { background: var(--o3-green); }
-    .brand-title { font-weight: 700; font-size: 15px; color: var(--o3-text); }
-    .brand-sub { font-size: 11px; color: var(--o3-text-sec); }
-
-    .top-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .top-actions { margin-inline-start: auto; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+    [hidden] { display: none !important; }
     .as-of-badge {
       background: var(--o3-surface); border: 1px solid var(--o3-border); border-radius: 8px;
       padding: 5px 10px; font-size: 11px; color: var(--o3-text-sec); display: inline-flex; align-items: center; gap: 5px;
@@ -103,48 +115,40 @@
     .as-of-badge strong { color: var(--o3-text); font-weight: 700; }
 
     .card {
-      background: var(--o3-surface); border-radius: 14px; padding: 12px;
+      background: var(--o3-surface); border-radius: 9px; padding: 6px;
       margin-bottom: 10px; box-shadow: var(--o3-shadow); border: 1px solid var(--o3-border-light);
     }
 
     /* Кастомные мультиселект-фильтры Ozon */
     .filters-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; align-items: stretch;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(142px, 100%), 1fr)); gap: 5px; align-items: stretch;
     }
-    .o3-field {
-      position: relative; background: var(--o3-surface); border: 1.5px solid var(--o3-border);
-      border-radius: 12px; padding: 6px 12px; min-height: 48px; cursor: pointer;
-      display: flex; flex-direction: column; justify-content: center;
-      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; user-select: none;
+    .filter-actions {
+      display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
     }
-    .o3-field:hover { border-color: var(--o3-text-muted); }
-    .o3-field.open, .o3-field:focus-within {
-      border-color: var(--o3-blue);
-      box-shadow: 0 0 0 3px var(--o3-blue-light);
+    .filter-actions .btn {
+      flex: none; white-space: nowrap; padding-inline: 8px; line-height: 1.2;
     }
-    .o3-field.accent-date {
-      background: var(--o3-blue-light); border-color: var(--o3-blue);
+    .o3-field { position: relative; min-width: 0; }
+    .o3-filter-trigger, .o3-field.accent-date {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      width: 100%; height: 30px; padding: 5px 10px; border: 1px solid var(--o3-border);
+      border-radius: 9px; background: var(--o3-surface); color: var(--o3-text);
+      box-shadow: var(--o3-shadow); font-family: inherit; font-size: 11.5px; font-weight: 500;
     }
-    .o3-field.loading-sk {
-      pointer-events: none;
-    }
-    .o3-field-label {
-      font-size: 11px; font-weight: 500; color: var(--o3-text-sec); line-height: 1.2; margin-bottom: 2px;
-    }
-    .o3-field.accent-date .o3-field-label { color: var(--o3-blue); font-weight: 700; }
-    .o3-field-value {
-      font-size: 13px; font-weight: 500; color: var(--o3-text);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 16px; line-height: 1.3;
-    }
-    .o3-field-arrow {
-      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-      font-size: 10px; color: var(--o3-text-sec); pointer-events: none; transition: transform 0.15s;
-    }
-    .o3-field.open .o3-field-arrow { transform: translateY(-50%) rotate(180deg); color: var(--o3-blue); }
+    .o3-filter-trigger { cursor: pointer; text-align: left; }
+    .o3-filter-trigger:hover, .o3-filter-trigger[aria-expanded="true"] { border-color: var(--o3-blue); background: var(--o3-blue-light); }
+    .o3-filter-trigger.has-selection { color: var(--o3-blue); background: var(--o3-blue-light); }
+    :is(button, a, input, summary):focus-visible, .accent-date:focus-within { outline: 2px solid var(--o3-pink); outline-offset: 1px; }
+    .filters-grid .accent-date { grid-column: span 1; gap: 3px; padding-inline: 5px; }
+    .o3-field-label { color: var(--o3-text-sec); font-size: 10px; }
+    .o3-field-value { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .o3-field-arrow { width: 7px; height: 7px; flex: none; border: solid var(--o3-text-sec); border-width: 0 1.8px 1.8px 0; transform: translateY(-2px) rotate(45deg); }
+    .o3-field.open .o3-field-arrow { transform: translateY(2px) rotate(225deg); }
 
     .o3-date-input {
-      border: none; background: transparent; color: var(--o3-text); font-weight: 700;
-      font-size: 13px; padding: 0; margin: 0; outline: none; width: 100%; cursor: pointer;
+      min-width: 0; border: none; background: transparent; color: var(--o3-text); font-weight: 600;
+      font-size: 11.5px; padding: 0; margin: 0; outline: none; width: 100%; cursor: pointer;
       font-family: inherit;
     }
     body[data-theme="dark"] .o3-date-input { color-scheme: dark; }
@@ -154,11 +158,11 @@
       border-radius: 6px; padding: 2px 6px; font-size: 11.5px; font-weight: 700;
       font-family: inherit; cursor: pointer; outline: none; margin: 0 2px;
     }
-    .inline-due-date:hover, .inline-due-date:focus { border-color: var(--o3-amber); }
+    .inline-due-date:hover, .inline-due-date:focus { border-color: var(--o3-blue); }
     body[data-theme="dark"] .inline-due-date { color-scheme: dark; }
 
     .o3-dropdown {
-      position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; width: max-content; max-width: 320px;
+      position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; max-width: 320px;
       background: var(--o3-surface-elevated); border-radius: 12px; padding: 6px 0;
       box-shadow: var(--o3-dropdown-shadow); border: 1px solid var(--o3-border);
       z-index: 90; display: none;
@@ -174,8 +178,9 @@
 
     .o3-dd-list { max-height: 230px; overflow-y: auto; }
     .o3-dd-item {
+      width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--o3-text); text-align: left; font-family: inherit;
       display: flex; justify-content: space-between; align-items: center; gap: 12px;
-      padding: 9px 14px; font-size: 13px; color: var(--o3-text); cursor: pointer;
+      min-height: 28px; padding: 4px 8px; font-size: 12px; cursor: pointer;
       transition: background 0.12s;
     }
     .o3-dd-item:hover { background: var(--o3-surface-hover); }
@@ -185,39 +190,47 @@
       color: var(--o3-blue); opacity: 0; flex-shrink: 0; transition: opacity 0.1s;
     }
     .o3-dd-item.selected .o3-dd-check { opacity: 1; }
-    .o3-dd-item.selected { font-weight: 600; }
+    .o3-dd-item.selected { color: var(--o3-blue); background: var(--o3-blue-light); font-weight: 600; }
 
     /* ===================================================================== */
-    /* ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ НАЗНАЧЕНИЯ И РАССЫЛКИ               */
-    /* ===================================================================== */
-    .alerts-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
-      gap: 10px; margin-bottom: 10px;
-    }
+    /* Документы по сроку */
     details.alert-acc {
-      background: var(--o3-surface); border-radius: 12px; border: 1.5px solid var(--o3-border);
-      box-shadow: var(--o3-shadow); overflow: visible;
+      margin-bottom: 6px; background: var(--o3-surface); border-radius: 9px;
+      border: 1px solid var(--o3-border); box-shadow: var(--o3-shadow);
     }
-    details.alert-acc.overdue { border-color: rgba(249, 17, 85, 0.45); }
-    details.alert-acc.duetoday { border-color: rgba(217, 119, 6, 0.45); }
-    details.alert-acc summary {
-      padding: 10px 14px; font-weight: 700; font-size: 12.5px; cursor: pointer;
-      user-select: none; display: flex; justify-content: space-between; align-items: center;
-      background: var(--o3-bg); color: var(--o3-text); border-radius: 11px 11px 0 0; gap: 6px;
+    .alert-acc > summary {
+      display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+      min-height: 32px; cursor: pointer; list-style: none; color: var(--o3-text-sec);
     }
-    .alert-pill {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 2px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 800; margin-left: 4px;
+    .alert-acc > summary::-webkit-details-marker { display: none; }
+    .alert-acc > summary::before {
+      content: ""; width: 6px; height: 6px; border: solid currentColor;
+      border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg);
     }
-    .alert-pill.red { background: rgba(249, 17, 85, 0.14); color: var(--o3-red); }
-    .alert-pill.amber { background: rgba(217, 119, 6, 0.15); color: var(--o3-amber); }
-    .alert-filter-row {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px; padding: 8px 12px 0;
+    .alert-acc[open] > summary::before { transform: rotate(45deg); }
+    .deadline-summary-title { font-weight: 700; color: var(--o3-text); }
+    .alert-pill { padding: 2px 7px; border-radius: 9px; font-weight: 700; }
+    .alert-pill.red { background: var(--o3-red-light); color: var(--o3-red); }
+    .alert-pill.amber { background: var(--o3-amber-light); color: var(--o3-amber); }
+    .deadline-tools {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 6px 8px;
+      border-top: 1px solid var(--o3-border-light);
     }
+    .deadline-tools .o3-field { flex: 1 1 142px; max-width: 240px; }
+    .deadline-tools .inline-due-date { height: 30px; }
+    .deadline-period {
+      display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px;
+      background: var(--o3-surface-hover);
+    }
+    .deadline-period button {
+      color: var(--o3-text-sec); background: transparent; border: 0; border-radius: 6px;
+      font: inherit; font-weight: 600; padding: 5px 7px; cursor: pointer;
+    }
+    .deadline-period button:hover { background: var(--o3-blue-light); }
+    .deadline-period button[aria-pressed="true"] { color: var(--o3-on-brand); background: var(--o3-brand); }
 
     .assign-toolbar {
-      padding: 8px 12px; background: var(--o3-surface);
+      padding: 5px 8px; background: var(--o3-surface);
       border-top: 1px solid var(--o3-border-light); border-bottom: 1px solid var(--o3-border);
       display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between;
     }
@@ -225,8 +238,24 @@
       display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
       font-weight: 600; color: var(--o3-text); cursor: pointer; user-select: none;
     }
-    .assign-select-all input[type="checkbox"], .doc-check-input {
-      width: 15px; height: 15px; accent-color: var(--o3-blue); cursor: pointer; margin: 0;
+    input[type="checkbox"] {
+      appearance: none; display: inline-grid; place-content: center; flex: 0 0 16px;
+      width: 16px; height: 16px; margin: 0; padding: 0; border: 1px solid #A8B5C5;
+      border-radius: 4px; background: var(--o3-surface); cursor: pointer;
+    }
+    input[type="checkbox"]:hover { border-color: var(--o3-blue); }
+    input[type="checkbox"]:is(:checked, :indeterminate) { border-color: var(--o3-brand); background: var(--o3-brand); }
+    input[type="checkbox"]:checked::after {
+      content: ""; width: 7px; height: 4px; border: solid var(--o3-on-brand);
+      border-width: 0 0 2px 2px; transform: rotate(-45deg) translate(1px,-1px);
+    }
+    input[type="checkbox"]:indeterminate::after {
+      content: ""; width: 8px; height: 2px; border: 0; background: var(--o3-on-brand); transform: none;
+    }
+    input[type="checkbox"]:disabled { opacity: .55; cursor: default; }
+    @media (forced-colors: active) {
+      input[type="checkbox"] { appearance: auto; }
+      input[type="checkbox"]::after { display: none; }
     }
     .assign-controls {
       display: flex; align-items: center; gap: 6px; flex: 1; min-width: 220px; flex-wrap: wrap;
@@ -243,7 +272,7 @@
       border-color: var(--o3-blue); background: var(--o3-surface);
     }
     .op-picker-input.has-selected {
-      border-color: var(--o3-green); font-weight: 600;
+      border-color: var(--o3-blue); font-weight: 600;
     }
     .op-picker-clear {
       position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
@@ -298,32 +327,30 @@
       color: var(--o3-blue); cursor: pointer; transition: 0.12s; font-weight: 700;
     }
     .btn-single-assign:hover {
-      background: var(--o3-blue); color: #fff;
+      background: var(--o3-brand); color: var(--o3-on-brand);
     }
     .btn-single-push {
-      border: 1px solid var(--o3-amber); background: rgba(217, 119, 6, 0.12);
-      color: var(--o3-amber); cursor: pointer; transition: 0.12s; font-weight: 700;
+      border: 1px solid var(--o3-border); background: var(--o3-blue-light);
+      color: var(--o3-blue); cursor: pointer; transition: 0.12s; font-weight: 700;
     }
     .btn-single-push:hover {
-      background: var(--o3-amber); color: #fff;
+      background: var(--o3-brand); color: var(--o3-on-brand);
     }
-    .dir-INCOMING { background: rgba(16, 185, 129, 0.14); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.25); }
-    .dir-OUTGOING { background: var(--o3-blue-light); color: var(--o3-blue); border: 1px solid rgba(0, 91, 255, 0.2); }
+    .dir-INCOMING { background: var(--o3-surface-hover); color: var(--o3-text-sec); border: 1px solid var(--o3-border); }
+    .dir-OUTGOING { background: var(--o3-blue-light); color: var(--o3-blue); border: 1px solid var(--o3-border); }
     .badge-entity { background: var(--o3-bg); color: var(--o3-text); border: 1px solid var(--o3-border); }
-    .badge-status { background: rgba(217, 119, 6, 0.12); color: var(--o3-amber); border: 1px solid rgba(217, 119, 6, 0.25); }
+    .badge-status { background: var(--o3-bg); color: var(--o3-text-sec); border: 1px solid var(--o3-border); }
 
     .btn {
-      padding: 8px 12px; border: none; border-radius: 10px; cursor: pointer;
+      padding: 5px 10px; min-height: 30px; border: none; border-radius: 8px; cursor: pointer;
       font-weight: 600; font-size: 12px; transition: all 0.15s ease;
       display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     }
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-    .btn-primary { background: var(--o3-blue); color: #fff; }
-    .btn-primary:hover:not(:disabled) { background: var(--o3-blue-hover); }
-    .btn-amber { background: var(--o3-amber); color: #fff; }
-    .btn-amber:hover:not(:disabled) { filter: brightness(0.95); }
+    .btn-primary { background: var(--o3-brand); color: var(--o3-on-brand); }
+    .btn-primary:hover:not(:disabled) { background: var(--o3-brand-hover); }
     .btn-light { background: var(--o3-blue-light); color: var(--o3-blue); }
-    .btn-light:hover:not(:disabled) { filter: brightness(0.95); }
+    .btn-light:hover:not(:disabled) { background: var(--o3-blue-tint-hover); color: var(--o3-blue-hover); }
     .btn-ghost { background: var(--o3-bg); color: var(--o3-text-sec); border: 1px solid var(--o3-border); }
     .btn-ghost:hover:not(:disabled) { color: var(--o3-text); border-color: var(--o3-text-muted); }
 
@@ -400,9 +427,18 @@
 
     /* Таблица с регулируемой высотой */
     .table-wrap {
-      background: var(--o3-surface); border-radius: 12px 12px 0 0; border: 1px solid var(--o3-border-light);
+      background: var(--o3-surface); border-radius: 8px 8px 0 0; border: 1px solid var(--o3-border-light);
       box-shadow: var(--o3-shadow); overflow: auto; height: var(--table-height); min-height: 200px; max-height: 88vh;
     }
+    .table-wrap { scrollbar-width: thin; }
+    .table-wrap table { font-size: 11.5px; }
+    .table-wrap td, .table-wrap th { height: 28px; padding: 0 6px; vertical-align: middle; }
+    .table-wrap thead { position: sticky; top: 0; z-index: 4; }
+    .table-wrap thead th { position: static; height: 30px; font-size: 11px; }
+    .table-wrap thead th.sticky-col { position: sticky; }
+    .table-wrap tr.group-row td { height: 30px; }
+    .table-wrap tr.doctype-row td { height: 26px; }
+
     .table-height-resizer {
       height: 10px; background: var(--o3-bg); border: 1px solid var(--o3-border-light); border-top: none;
       border-radius: 0 0 12px 12px; cursor: row-resize; display: flex; align-items: center; justify-content: center;
@@ -449,7 +485,7 @@
       user-select: none; border-left: 2px solid var(--o3-blue); border-right: 2px solid var(--o3-blue);
     }
     td.marks-parent-cell {
-      background: rgba(0, 91, 255, 0.04); border-left: 2px solid var(--o3-border); border-right: 2px solid var(--o3-border);
+      background: var(--o3-doctype-bg); border-left: 2px solid var(--o3-border); border-right: 2px solid var(--o3-border);
     }
     th.mark-child-col {
       background: var(--o3-surface); color: var(--o3-text); font-weight: 600; font-size: 11.5px;
@@ -487,7 +523,7 @@
       transform: translateY(-1px);
     }
     .icon-action-btn.copied {
-      border-color: var(--o3-green); color: var(--o3-green); background: rgba(16, 185, 129, 0.14);
+      border-color: var(--o3-green); color: var(--o3-green); background: var(--o3-green-light);
     }
 
     .op-status-badge {
@@ -499,12 +535,12 @@
     .op-status-dot {
       width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0;
     }
-    .st-ONLINE .op-status-dot { background: #10B981; }
-    .st-BREAK .op-status-dot { background: #FBBF24; }
-    .st-OFFLINE .op-status-dot { background: #EF4444; }
-    .st-POSTPROCESSING .op-status-dot { background: #6B7280; }
-    .st-TRAINING .op-status-dot { background: #0088FF; }
-    .st-UNKNOWN_STATUS .op-status-dot { background: #CBD5E1; }
+    .st-ONLINE .op-status-dot { background: var(--o3-green); }
+    .st-BREAK .op-status-dot { background: var(--o3-amber); }
+    .st-OFFLINE .op-status-dot { background: var(--o3-red); }
+    .st-POSTPROCESSING .op-status-dot { background: var(--o3-text-sec); }
+    .st-TRAINING .op-status-dot { background: var(--o3-blue); }
+    .st-UNKNOWN_STATUS .op-status-dot { background: var(--o3-text-muted); }
     .op-status-dur { color: var(--o3-text-sec); font-weight: 500; }
 
     tr.doctype-row td {
@@ -525,28 +561,58 @@
       display: inline-block; min-width: 24px; padding: 2px 6px; border-radius: 6px;
       font-weight: 700; color: var(--o3-blue); background: var(--o3-blue-light); cursor: pointer; transition: 0.12s;
     }
-    tr.doctype-row .cell-btn {
+    tr.doctype-row .cell-btn:not(.paired-metric) {
       background: var(--o3-border-light); color: var(--o3-text-sec); font-weight: 600;
     }
-    .cell-btn:hover, tr.doctype-row .cell-btn:hover {
-      background: var(--o3-blue); color: #fff; transform: scale(1.05);
+    .cell-btn:hover, tr.doctype-row .cell-btn:not(.paired-metric):hover {
+      background: var(--o3-brand); color: var(--o3-on-brand); transform: scale(1.05);
     }
-    .cell-zero { color: var(--o3-text-muted); opacity: 0.45; user-select: none; }
-    th.internal-request-col { background: rgba(99, 102, 241, 0.10) !important; color: #4F46E5 !important; }
-    td.internal-request-cell { text-align: center; font-weight: 700; color: #4F46E5; }
+    .cell-zero { color: var(--o3-text-muted); user-select: none; }
+    th.internal-request-col { background: var(--o3-pink-light); color: var(--o3-pink-text); }
+    td.internal-request-cell { text-align: center; font-weight: 700; color: var(--o3-pink-text); }
+    th.assigned-col { background: var(--o3-blue-light); color: var(--o3-blue); }
+    .assigned-floating-tooltip {
+      position: fixed; z-index: 9999; pointer-events: none;
+      background: var(--o3-surface-elevated); color: var(--o3-text);
+      border: 1px solid var(--o3-border); border-radius: 12px;
+      padding: 10px 12px; box-shadow: var(--o3-dropdown-shadow);
+      max-width: 380px; font-size: 11.5px; display: none;
+    }
+    .aft-title { font-weight: 700; font-size: 12px; margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid var(--o3-border-light); color: var(--o3-blue); }
+    .aft-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--o3-border-light); }
+    .aft-row:last-child { border-bottom: none; }
+    .aft-type { font-weight: 600; color: var(--o3-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .aft-doc { color: var(--o3-text-sec); font-size: 11px; margin-left: 4px; }
+    .aft-dur { font-weight: 700; color: var(--o3-blue); white-space: nowrap; font-size: 11px; }
     .paired-count-cell { text-align: center; min-width: 112px; }
     .paired-count-values { display: flex; justify-content: center; align-items: center; gap: 5px; flex-wrap: wrap; }
     .paired-metric { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; padding: 2px 5px; border-radius: 6px; font-size: 11px; }
-    .paired-metric.metric-document { color: #1769AA; background: rgba(23,105,170,.09); }
-    .paired-metric.metric-request { color: #6B4BC3; background: rgba(107,75,195,.10); }
-    .paired-metric.zero { font-weight: 600; opacity: .65; }
+    .paired-metric.metric-document { color: var(--o3-blue); background: var(--o3-blue-light); }
+    .paired-metric.metric-request { color: var(--o3-pink-text); background: var(--o3-pink-light); }
+    .cell-btn.paired-metric:hover { background: var(--o3-brand); color: var(--o3-on-brand); }
+    .cell-btn.metric-request:hover { background: var(--o3-pink-text); color: var(--o3-surface); }
+    .paired-metric.zero { font-weight: 600; }
     .paired-metric.loading { cursor: default; }
     .op-status-skeleton { display: inline-flex; align-items: center; min-height: 16px; }
     .op-status-skeleton .sk-inline { width: 96px; height: 12px; }
     .tree-detail-controls { float: right; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
-    .tree-detail-control { border: 0; border-radius: 5px; padding: 2px 4px; background: var(--o3-blue-light); color: var(--o3-blue); font: inherit; font-size: 10px; cursor: pointer; white-space: nowrap; }
-    .tree-detail-control:hover { background: var(--o3-blue); color: #fff; }
-    tr.request-theme-row td.sticky-col { padding-left: 28px; color: var(--o3-text-sec); }
+    .tree-detail-control {
+      display: inline-grid; place-items: center; width: 23px; height: 22px; padding: 0;
+      border: 1px solid var(--o3-border); border-radius: 6px; color: var(--o3-blue); background: var(--o3-surface); cursor: pointer;
+    }
+    .tree-detail-control > span { display: inline-flex; }
+    .tree-detail-control:hover, .tree-detail-control[aria-expanded="true"] { background: var(--o3-blue-light); border-color: var(--o3-blue); }
+    .table-wrap .detail-section td {
+      height: 23px; padding-inline: 12px; text-align: left; background: var(--o3-surface-hover);
+      color: var(--o3-text-sec); border-top: 1px solid var(--o3-border);
+    }
+    .detail-section strong { display: inline-flex; align-items: center; gap: 6px; color: var(--o3-text); }
+    .detail-section strong span { display: inline-flex; }
+    .table-wrap .detail-metric.zero, .table-wrap .detail-na { color: var(--o3-text-muted); }
+    .table-wrap .cell-btn.detail-metric { color: var(--o3-blue); background: var(--o3-blue-light); }
+    .table-wrap .cell-btn.detail-metric:hover { color: var(--o3-on-brand); background: var(--o3-brand); }
+    tr.request-category-row td.sticky-col { padding-left: 22px; color: var(--o3-text); font-weight: 600; }
+    tr.request-theme-row td.sticky-col { padding-left: 36px; color: var(--o3-text-sec); }
     .breakdown-group-col { background: var(--o3-surface-hover); color: var(--o3-text-sec); font-size: 11px; text-align: center; }
 
     /* Скелетоны загрузки */
@@ -579,22 +645,22 @@
     }
     details.log-accordion.has-error { border-color: var(--o3-red); }
     details.log-accordion summary {
-      padding: 10px 14px; font-weight: 700; font-size: 12px; color: var(--o3-text-sec);
+      padding: 6px 10px; font-weight: 700; font-size: 12px; color: var(--o3-text-sec);
       cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;
       background: var(--o3-bg);
     }
     .log-controls { display: flex; gap: 6px; align-items: center; }
     .log-list {
       max-height: 210px; overflow-y: auto; padding: 8px 12px;
-      font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; background: #0F172A; color: #E2E8F0;
+      font-family: 'Consolas', 'Monaco', monospace; font-size: 11px; background: var(--o3-surface); color: var(--o3-text);
     }
-    .log-entry { padding: 4px 0; border-bottom: 1px solid #1E293B; line-height: 1.4; word-break: break-all; }
-    .log-time { color: #64748B; margin-right: 6px; }
-    .log-info { color: #93C5FD; }
-    .log-success { color: #34D399; }
-    .log-warn { color: #FBBF24; }
-    .log-error { color: #FB7185; font-weight: 700; }
-    .log-details { color: #94A3B8; font-size: 10.5px; margin-top: 2px; padding-left: 12px; }
+    .log-entry { padding: 4px 0; border-bottom: 1px solid var(--o3-border-light); line-height: 1.4; word-break: break-all; }
+    .log-time { color: var(--o3-text-muted); margin-right: 6px; }
+    .log-info { color: var(--o3-blue); }
+    .log-success { color: var(--o3-green); }
+    .log-warn { color: var(--o3-amber); }
+    .log-error { color: var(--o3-red); font-weight: 700; }
+    .log-details { color: var(--o3-text-sec); font-size: 10.5px; margin-top: 2px; padding-left: 12px; }
 
     /* Боковой сайдбар детализации с регулируемой шириной */
     .drawer {
@@ -647,14 +713,14 @@
       height: 100%; cursor: pointer; position: relative; border-radius: 3px 3px 0 0;
     }
     .bar-col:hover { background: var(--o3-blue-light); }
-    .bar-col.selected { background: var(--o3-blue-light); }
+    .bar-col.selected { background: var(--o3-pink-light); }
     .bar-fill {
       width: 100%; background: var(--o3-blue); border-radius: 2px 2px 0 0;
       min-height: 2px; transition: height 0.2s ease, background 0.15s;
     }
     .bar-col.zero .bar-fill { background: var(--o3-border); height: 2px !important; }
     .bar-col:hover .bar-fill { background: var(--o3-blue-hover); }
-    .bar-col.selected .bar-fill { background: var(--o3-red); }
+    .bar-col.selected .bar-fill { background: var(--o3-pink); }
     .bar-val {
       font-size: 9px; font-weight: 700; color: var(--o3-blue);
       position: absolute; top: 0; line-height: 1; display: none;
@@ -666,131 +732,108 @@
     }
 
     .drawer-list { flex: 1; overflow: auto; border: 1px solid var(--o3-border-light); border-radius: 10px; }
-    .doc-card { padding: 10px 12px; border-bottom: 1px solid var(--o3-border-light); font-size: 12px; }
+    .doc-card { padding: 6px 10px; border-bottom: 1px solid var(--o3-border-light); font-size: 12px; }
     .doc-card:hover { background: var(--o3-surface-hover); }
     .doc-top { display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin-bottom: 4px; gap: 6px; flex-wrap: wrap; }
     .doc-top a { color: var(--o3-blue); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
     .doc-top a:hover { text-decoration: underline; }
     .o3-svg-icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
-    .doc-meta { color: var(--o3-text-sec); font-size: 11.5px; line-height: 1.55; }
+    .doc-meta { color: var(--o3-text-sec); font-size: 11.5px; line-height: 1.4; }
     .mark-pill {
       display: inline-block; background: var(--o3-blue-light); color: var(--o3-blue);
       padding: 2px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 600; margin: 3px 4px 0 0;
+    }
+    .data-warning { margin: 4px 0; color: var(--o3-amber); font-size: 12px; }
+    @media (max-width: 600px) {
+      .header-row { flex-wrap: wrap; gap: 4px; }
+      .widget-switcher { min-width: 0; }
+      .top-actions { margin-inline-start: 0; }
+      .theme-btn, .w-tab { padding: 5px 7px; }
+      .table-wrap .sticky-col { width: min(var(--first-col-width), 52vw); min-width: min(var(--first-col-width), 52vw); max-width: min(var(--first-col-width), 52vw); }
+      .o3-dropdown { width: 100%; min-width: 100%; }
+      .drawer { min-width: 0; max-width: 100vw; }
+      body.drawer-open { padding-right: 8px; }
+      .doc-top { flex-wrap: wrap; }
     }
   </style>
 </head>
 <body>
 
   <!-- Баннер автопроверки обновлений с GitHub -->
-  <div id="updateBanner" style="display:none; background:var(--o3-blue); color:#fff; padding:9px 12px; border-radius:10px; margin-bottom:10px; font-size:12px; font-weight:600; justify-content:space-between; align-items:center; gap:8px; box-shadow:var(--o3-shadow);">
-    <span id="updateBannerText">🚀 Доступна новая версия!</span>
+  <div id="updateBanner" style="display:none; background:var(--o3-brand); color:var(--o3-on-brand); padding:9px 12px; border-radius:10px; margin-bottom:10px; font-size:12px; font-weight:600; justify-content:space-between; align-items:center; gap:8px; box-shadow:var(--o3-shadow);">
+    <span id="updateBannerText">Доступна новая версия!</span>
     <div style="display:flex; gap:6px;">
-      <button id="btnApplyUpdate" class="btn" style="background:#fff; color:var(--o3-blue); padding:5px 10px; font-size:11.5px; font-weight:700;">⚡ Перезагрузить расширение</button>
+      <button id="btnApplyUpdate" class="btn" style="background:var(--o3-on-brand); color:var(--o3-brand); padding:5px 10px; font-size:11.5px; font-weight:700;">Перезагрузить расширение</button>
     </div>
   </div>
 
   <!-- Верхняя панель: переключатель виджетов + кнопка версии + переключатель Тёмной/Светлой темы -->
-  <div class="header-row">
-    <div class="widget-switcher" style="margin-bottom:0;">
-      <button id="tabExecutors" class="w-tab active">🛠 Виджет Исполнителей (По закрытию)</button>
-      <button id="tabRegistrars" class="w-tab">📝 Виджет Регистраторов (По созданию)</button>
+  <header class="header-row">
+    <div class="brand"><span class="brand-logo">O3</span><strong>СЭД</strong></div>
+    <div class="widget-switcher">
+      <button id="tabExecutors" title="crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Завершен" class="w-tab active">Исполнители</button>
+      <button id="tabRegistrars" title="crm.bank.ozon.ru · Фильтр по дате создания (регистрации) документа" class="w-tab">Регистраторы</button>
     </div>
-    <button id="btnReloadExt" class="theme-btn" title="Нажмите, чтобы перезагрузить расширение после запуска update.bat">⚡ v—</button>
-    <button id="btnThemeToggle" class="theme-btn" title="Переключить Светлую / Тёмную тему">🌙 Тёмная</button>
-  </div>
+    <div class="top-actions" id="exHeaderActions">
+      <div class="as-of-badge">Актуально на: <strong id="exAsOfTime">—</strong></div>
+      <button id="exBtnCsv" class="btn btn-light">CSV</button>
+      <button id="exBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
+    </div>
+    <div class="top-actions" id="rgHeaderActions" hidden>
+      <div class="as-of-badge">Актуально на: <strong id="rgAsOfTime">—</strong></div>
+      <button id="rgBtnCsv" class="btn btn-light">CSV</button>
+      <button id="rgBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
+    </div>
+    <button id="btnReloadExt" class="theme-btn" title="Нажмите, чтобы перезагрузить расширение после запуска update.bat">v—</button>
+    <button id="btnThemeToggle" class="theme-btn" title="Переключить Светлую / Тёмную тему">Тёмная</button>
+  </header>
 
   <!-- ======================================================================= -->
   <!-- ВИДЖЕТ 1: ДАШБОРД ИСПОЛНИТЕЛЕЙ (ПО ДАТЕ ЗАКРЫТИЯ, СТАТУС = CLOSED)       -->
   <!-- ======================================================================= -->
   <div id="widgetExecutors">
-    <div class="topbar">
-      <div class="brand">
-        <div class="brand-logo">O3</div>
-        <div>
-          <div class="brand-title">СЭД · Дашборд Исполнителей</div>
-          <div class="brand-sub">crm.bank.ozon.ru · Создание: 01.01.2026–31.12.2027 · Статус: Завершен</div>
-        </div>
-      </div>
-      <div class="top-actions">
-        <div class="as-of-badge">Актуально на: <strong id="exAsOfTime">—</strong></div>
-        <button id="exBtnCsv" class="btn btn-light">CSV</button>
-        <button id="exBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
-      </div>
-    </div>
 
-    <!-- ДВА АККОРДЕОНА ДЕДЛАЙНОВ + ПАНЕЛЬ МАССОВОГО НАЗНАЧЕНИЯ И РАССЫЛКИ -->
-    <div class="alerts-grid">
-      <!-- 1. Просроченные документы -->
-      <details id="accOverdue" class="alert-acc overdue">
-        <summary>
-          <span style="display:inline-flex; align-items:center; gap:6px;"><svg class="o3-svg-icon" style="color:var(--o3-red);" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C9.44772 1 9 1.44772 9 2C9 2.55228 9.44772 3 10 3H14C14.5523 3 15 2.55228 15 2C15 1.44772 14.5523 1 14 1H10Z" fill="currentColor"/><path d="M19.7071 3.29289C19.3166 2.90237 18.6834 2.90237 18.2929 3.29289C17.9024 3.68342 17.9024 4.31658 18.2929 4.70711L19.2929 5.70711C19.6834 6.09763 20.3166 6.09763 20.7071 5.70711C21.0976 5.31658 21.0976 4.68342 20.7071 4.29289L19.7071 3.29289Z" fill="currentColor"/><path d="M12 22C17.5842 22 21 18.5842 21 13C21 7.4158 17.5842 4 12 4C6.4158 4 3 7.4158 3 13C3 18.5842 6.4158 22 12 22ZM15.8 9.6L13.8396 12.2139C13.9428 12.4552 14 12.7209 14 13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13C10 11.8954 10.8954 11 12 11C12.081 11 12.1609 11.0048 12.2394 11.0142L14.2 8.4C14.5314 7.95817 15.1582 7.86863 15.6 8.2C16.0418 8.53137 16.1314 9.15817 15.8 9.6Z" fill="currentColor"/></svg> Просроченные документы <span id="badgeOverdueCount" class="alert-pill red">…</span></span>
-          <button id="btnCsvOverdue" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">CSV</button>
-        </summary>
-        <div class="alert-filter-row">
-          <div id="alertOriginFilterOverdue" class="o3-field" data-label="Происхождение"></div>
-          <div id="alertQueueFilterOverdue" class="o3-field" data-label="Очередь"></div>
+    <details id="deadlinePanel" class="alert-acc">
+      <summary>
+        <span class="deadline-summary-title">Документы по сроку</span>
+        <span id="deadlineSummaryScope">Просроченные</span>
+        <span id="deadlineCount" class="alert-pill red" aria-live="polite">…</span>
+      </summary>
+      <div class="deadline-tools">
+        <div class="deadline-period" role="group" aria-label="Срок документа">
+          <button type="button" data-period="overdue" aria-pressed="true">Просроченные</button>
+          <button type="button" data-period="today" aria-pressed="false">Сегодня</button>
+          <button type="button" data-period="tomorrow" aria-pressed="false">Завтра</button>
+          <button type="button" data-period="custom" aria-pressed="false">На дату</button>
         </div>
-        <div class="assign-toolbar">
-          <label class="assign-select-all">
-            <input type="checkbox" id="chkAllOverdue">
-            <span>Выбрать все (<span id="selCountOverdue">0</span>)</span>
-          </label>
-          <div class="assign-controls">
-            <div class="op-picker-wrap" id="opWrapOverdue">
-              <input type="text" id="opInputOverdue" class="op-picker-input" placeholder="Поиск оператора по ФИО или email..." autocomplete="off">
-              <button type="button" id="opClearOverdue" class="op-picker-clear" title="Очистить выбор">✕</button>
-              <div id="opDdOverdue" class="op-picker-dd"></div>
-            </div>
-            <button type="button" id="btnAssignOverdue" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled><svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C9 3 7 5 7 8C7 11 9 13 12 13C15 13 17 11 17 8C17 5 15 3 12 3Z" fill="currentColor"/><path d="M7.50001 14C8.12006 14.002 8.4838 14.1733 8.90908 14.3734C9.51262 14.6576 10.2401 15 12 15C13.7574 15 14.4853 14.6569 15.0883 14.3726C15.5147 14.1716 15.8787 14 16.5 14C17.8675 14 17.7271 15 17 15.1366C15.5359 15.4116 15 16.1699 15 18C15 20.3972 14.5403 20.9555 12.2983 20.9974C12.197 20.9991 12.0947 21 11.9913 21C6.5 21 4 18.5 4 17.5C4 16.5 6.5 13.9967 7.50001 14Z" fill="currentColor"/><path d="M20 17C20 16.4477 19.5523 16 19 16C18.4477 16 18 16.4477 18 17V18H17C16.4477 18 16 18.4477 16 19C16 19.5523 16.4477 20 17 20H18V21C18 21.5523 18.4477 22 19 22C19.5523 22 20 21.5523 20 21V20H21C21.5523 20 22 19.5523 22 19C22 18.4477 21.5523 18 21 18H20V17Z" fill="currentColor"/></svg> Назначить</button>
-            <button type="button" id="btnPushOverdue" class="btn btn-amber" style="padding:6px 10px; font-size:11.5px;" disabled title="Отправить напоминание по выбранным просроченным документам в канал Chatzone"><svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 4C13 3.44772 12.5523 3 12 3C11.4477 3 11 3.44772 11 4C7.33114 4.3927 6.65279 7.03586 6.1079 9.11821C5.91732 9.84651 5.74307 10.5124 5.46291 11C5.29239 11.2968 5.09424 11.5495 4.89986 11.7975C4.4393 12.3849 4 12.9452 4 14C3.99998 16 6.99107 18 12 18C17.0089 18 20 16 20 14C20 12.9496 19.5524 12.3896 19.085 11.8048C18.885 11.5545 18.6813 11.2997 18.5076 11C18.2223 10.5077 18.0479 9.83368 17.8573 9.09717C17.3196 7.01851 16.6531 4.39152 13 4Z" fill="currentColor"/><path d="M9.30324 19C8.94643 18.9786 8.93152 19.4088 9.13668 19.701C9.68323 20.4796 10.8712 21 12 21C13.1436 21 14.3291 20.4662 14.8711 19.6705C15.0716 19.376 15.0524 18.975 14.6965 19.0003C14.6965 19.0003 13.5134 19.1875 12 19.1875C10.5031 19.1875 9.30324 19 9.30324 19Z" fill="currentColor"/></svg> Уведомить</button>
+        <input type="date" id="dueTargetDate" class="inline-due-date" aria-label="Дата истечения срока" hidden>
+        <div id="alertOriginFilter" class="o3-field" data-label="Происхождение"></div>
+        <div id="alertQueueFilter" class="o3-field" data-label="Очередь"></div>
+        <button id="btnCsvDeadline" class="btn btn-ghost" title="Скачать показанные документы" disabled>CSV</button>
+      </div>
+      <div class="assign-toolbar">
+        <label class="assign-select-all">
+          <input type="checkbox" id="chkAllDeadline">
+          <span>Выбрать все (<span id="selCountDeadline">0</span>)</span>
+        </label>
+        <div class="assign-controls">
+          <div class="op-picker-wrap" id="opWrapDeadline">
+            <input type="text" id="opInputDeadline" class="op-picker-input" placeholder="Поиск оператора по ФИО или email..." autocomplete="off">
+            <button type="button" id="opClearDeadline" class="op-picker-clear" title="Очистить выбор">✕</button>
+            <div id="opDdDeadline" class="op-picker-dd"></div>
           </div>
-          <div id="assignStatusOverdue" class="assign-status-line"></div>
+          <button type="button" id="btnAssignDeadline" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled><svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C9 3 7 5 7 8C7 11 9 13 12 13C15 13 17 11 17 8C17 5 15 3 12 3Z" fill="currentColor"/><path d="M7.50001 14C8.12006 14.002 8.4838 14.1733 8.90908 14.3734C9.51262 14.6576 10.2401 15 12 15C13.7574 15 14.4853 14.6569 15.0883 14.3726C15.5147 14.1716 15.8787 14 16.5 14C17.8675 14 17.7271 15 17 15.1366C15.5359 15.4116 15 16.1699 15 18C15 20.3972 14.5403 20.9555 12.2983 20.9974C12.197 20.9991 12.0947 21 11.9913 21C6.5 21 4 18.5 4 17.5C4 16.5 6.5 13.9967 7.50001 14Z" fill="currentColor"/><path d="M20 17C20 16.4477 19.5523 16 19 16C18.4477 16 18 16.4477 18 17V18H17C16.4477 18 16 18.4477 16 19C16 19.5523 16.4477 20 17 20H18V21C18 21.5523 18.4477 22 19 22C19.5523 22 20 21.5523 20 21V20H21C21.5523 20 22 19.5523 22 19C22 18.4477 21.5523 18 21 18H20V17Z" fill="currentColor"/></svg> Назначить</button>
+          <button type="button" id="btnPushDeadline" class="btn btn-light" style="padding:6px 10px; font-size:11.5px;" disabled title="Отправить напоминание по выбранным документам в канал Chatzone"><svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 4C13 3.44772 12.5523 3 12 3C11.4477 3 11 3.44772 11 4C7.33114 4.3927 6.65279 7.03586 6.1079 9.11821C5.91732 9.84651 5.74307 10.5124 5.46291 11C5.29239 11.2968 5.09424 11.5495 4.89986 11.7975C4.4393 12.3849 4 12.9452 4 14C3.99998 16 6.99107 18 12 18C17.0089 18 20 16 20 14C20 12.9496 19.5524 12.3896 19.085 11.8048C18.885 11.5545 18.6813 11.2997 18.5076 11C18.2223 10.5077 18.0479 9.83368 17.8573 9.09717C17.3196 7.01851 16.6531 4.39152 13 4Z" fill="currentColor"/><path d="M9.30324 19C8.94643 18.9786 8.93152 19.4088 9.13668 19.701C9.68323 20.4796 10.8712 21 12 21C13.1436 21 14.3291 20.4662 14.8711 19.6705C15.0716 19.376 15.0524 18.975 14.6965 19.0003C14.6965 19.0003 13.5134 19.1875 12 19.1875C10.5031 19.1875 9.30324 19 9.30324 19Z" fill="currentColor"/></svg> Уведомить</button>
         </div>
-        <div id="listOverdue" class="alert-body">
-          <div style="padding:14px; color:var(--o3-text-sec);">Загрузка просроченных документов из API...</div>
-        </div>
-      </details>
-
-      <!-- 2. Истекает (выбор даты + назначение + пушинг напоминаний в Chatzone) -->
-      <details id="accDueToday" class="alert-acc duetoday">
-        <summary>
-          <span style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
-            <svg class="o3-svg-icon" style="color:var(--o3-amber);" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C9.44772 1 9 1.44772 9 2C9 2.55228 9.44772 3 10 3H14C14.5523 3 15 2.55228 15 2C15 1.44772 14.5523 1 14 1H10Z" fill="currentColor"/><path d="M19.7071 3.29289C19.3166 2.90237 18.6834 2.90237 18.2929 3.29289C17.9024 3.68342 17.9024 4.31658 18.2929 4.70711L19.2929 5.70711C19.6834 6.09763 20.3166 6.09763 20.7071 5.70711C21.0976 5.31658 21.0976 4.68342 20.7071 4.29289L19.7071 3.29289Z" fill="currentColor"/><path d="M12 22C17.5842 22 21 18.5842 21 13C21 7.4158 17.5842 4 12 4C6.4158 4 3 7.4158 3 13C3 18.5842 6.4158 22 12 22ZM15.8 9.6L13.8396 12.2139C13.9428 12.4552 14 12.7209 14 13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13C10 11.8954 10.8954 11 12 11C12.081 11 12.1609 11.0048 12.2394 11.0142L14.2 8.4C14.5314 7.95817 15.1582 7.86863 15.6 8.2C16.0418 8.53137 16.1314 9.15817 15.8 9.6Z" fill="currentColor"/></svg> Истекает
-            <input type="date" id="dueTargetDate" class="inline-due-date" title="Выберите дату истечения срока">
-            <span id="badgeDueTodayCount" class="alert-pill amber">…</span>
-          </span>
-          <button id="btnCsvDueToday" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">CSV</button>
-        </summary>
-        <div class="alert-filter-row">
-          <div id="alertOriginFilterDueToday" class="o3-field" data-label="Происхождение"></div>
-          <div id="alertQueueFilterDueToday" class="o3-field" data-label="Очередь"></div>
-        </div>
-        <div class="assign-toolbar">
-          <label class="assign-select-all">
-            <input type="checkbox" id="chkAllDueToday">
-            <span>Выбрать все (<span id="selCountDueToday">0</span>)</span>
-          </label>
-          <div class="assign-controls">
-            <div class="op-picker-wrap" id="opWrapDueToday">
-              <input type="text" id="opInputDueToday" class="op-picker-input" placeholder="Поиск оператора по ФИО или email..." autocomplete="off">
-              <button type="button" id="opClearDueToday" class="op-picker-clear" title="Очистить выбор">✕</button>
-              <div id="opDdDueToday" class="op-picker-dd"></div>
-            </div>
-            <button type="button" id="btnAssignDueToday" class="btn btn-primary" style="padding:6px 10px; font-size:11.5px;" disabled><svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C9 3 7 5 7 8C7 11 9 13 12 13C15 13 17 11 17 8C17 5 15 3 12 3Z" fill="currentColor"/><path d="M7.50001 14C8.12006 14.002 8.4838 14.1733 8.90908 14.3734C9.51262 14.6576 10.2401 15 12 15C13.7574 15 14.4853 14.6569 15.0883 14.3726C15.5147 14.1716 15.8787 14 16.5 14C17.8675 14 17.7271 15 17 15.1366C15.5359 15.4116 15 16.1699 15 18C15 20.3972 14.5403 20.9555 12.2983 20.9974C12.197 20.9991 12.0947 21 11.9913 21C6.5 21 4 18.5 4 17.5C4 16.5 6.5 13.9967 7.50001 14Z" fill="currentColor"/><path d="M20 17C20 16.4477 19.5523 16 19 16C18.4477 16 18 16.4477 18 17V18H17C16.4477 18 16 18.4477 16 19C16 19.5523 16.4477 20 17 20H18V21C18 21.5523 18.4477 22 19 22C19.5523 22 20 21.5523 20 21V20H21C21.5523 20 22 19.5523 22 19C22 18.4477 21.5523 18 21 18H20V17Z" fill="currentColor"/></svg> Назначить</button>
-            <button type="button" id="btnPushDueToday" class="btn btn-amber" style="padding:6px 10px; font-size:11.5px;" disabled title="Отправить напоминание по выбранным документам в канал Chatzone"><svg class="o3-svg-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 4C13 3.44772 12.5523 3 12 3C11.4477 3 11 3.44772 11 4C7.33114 4.3927 6.65279 7.03586 6.1079 9.11821C5.91732 9.84651 5.74307 10.5124 5.46291 11C5.29239 11.2968 5.09424 11.5495 4.89986 11.7975C4.4393 12.3849 4 12.9452 4 14C3.99998 16 6.99107 18 12 18C17.0089 18 20 16 20 14C20 12.9496 19.5524 12.3896 19.085 11.8048C18.885 11.5545 18.6813 11.2997 18.5076 11C18.2223 10.5077 18.0479 9.83368 17.8573 9.09717C17.3196 7.01851 16.6531 4.39152 13 4Z" fill="currentColor"/><path d="M9.30324 19C8.94643 18.9786 8.93152 19.4088 9.13668 19.701C9.68323 20.4796 10.8712 21 12 21C13.1436 21 14.3291 20.4662 14.8711 19.6705C15.0716 19.376 15.0524 18.975 14.6965 19.0003C14.6965 19.0003 13.5134 19.1875 12 19.1875C10.5031 19.1875 9.30324 19 9.30324 19Z" fill="currentColor"/></svg> Уведомить</button>
-          </div>
-          <div id="assignStatusDueToday" class="assign-status-line"></div>
-        </div>
-        <div id="listDueToday" class="alert-body">
-          <div style="padding:14px; color:var(--o3-text-sec);">Загрузка документов по сроку из API...</div>
-        </div>
-      </details>
-    </div>
+        <div id="assignStatusDeadline" class="assign-status-line"></div>
+      </div>
+      <div id="listDeadline" class="alert-body"></div>
+    </details>
 
     <div class="card">
       <div class="filters-grid">
         <div class="o3-field accent-date">
-          <div class="o3-field-label">Дата закрытия</div>
+          <label class="o3-field-label" for="exDate">Закрытие</label>
           <input type="date" id="exDate" class="o3-date-input">
         </div>
 
@@ -803,8 +846,8 @@
         <div id="exWrapOrigin" class="o3-field" data-label="Происхождение"></div>
         <div id="exWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
-        <div style="display:flex; gap:6px; align-items:stretch;">
-          <button id="exBtnReload" class="btn btn-primary" style="flex:1;">🔄 Обновить</button>
+        <div class="filter-actions">
+          <button id="exBtnReload" class="btn btn-primary">Обновить</button>
           <button id="exBtnReset" class="btn btn-ghost">Сброс</button>
         </div>
       </div>
@@ -815,6 +858,7 @@
       </div>
     </div>
 
+    <p id="internalRequestWarning" role="status" class="data-warning" hidden>Данные по внутренним запросам неполные. Подробности в журнале.</p>
     <div class="sys-bar">
       <div>
         Дата закрытия: <strong id="exSysDate">—</strong> ·
@@ -825,7 +869,7 @@
       </div>
       <div>
         <button class="link-mini" id="exBtnToggleMarksCols">Столбцы меток</button> ·
-        <button class="link-mini" id="exBtnToggleDocTypes">Развернуть/свернуть типы док.</button> ·
+        <button class="link-mini" id="exBtnToggleDocTypes">Развернуть документы и запросы</button> ·
         <button class="link-mini" id="exBtnExpandGroups">Развернуть группы</button> ·
         <button class="link-mini" id="exBtnCollapseGroups">Свернуть до групп</button>
       </div>
@@ -855,25 +899,11 @@
   <!-- ВИДЖЕТ 2: ОТДЕЛЬНЫЙ ДАШБОРД РЕГИСТРАТОРОВ (ПО ДАТЕ СОЗДАНИЯ)             -->
   <!-- ======================================================================= -->
   <div id="widgetRegistrars" style="display:none;">
-    <div class="topbar">
-      <div class="brand">
-        <div class="brand-logo reg">O3</div>
-        <div>
-          <div class="brand-title">СЭД · Дашборд Регистраторов</div>
-          <div class="brand-sub">crm.bank.ozon.ru · Фильтр по дате создания (регистрации) документа</div>
-        </div>
-      </div>
-      <div class="top-actions">
-        <div class="as-of-badge">Актуально на: <strong id="rgAsOfTime">—</strong></div>
-        <button id="rgBtnCsv" class="btn btn-light">CSV</button>
-        <button id="rgBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
-      </div>
-    </div>
 
     <div class="card">
       <div class="filters-grid">
         <div class="o3-field accent-date">
-          <div class="o3-field-label">Дата создания</div>
+          <label class="o3-field-label" for="rgDate">Создание</label>
           <input type="date" id="rgDate" class="o3-date-input">
         </div>
 
@@ -886,8 +916,8 @@
         <div id="rgWrapOrigin" class="o3-field" data-label="Происхождение"></div>
         <div id="rgWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
-        <div style="display:flex; gap:6px; align-items:stretch;">
-          <button id="rgBtnReload" class="btn btn-primary" style="flex:1;">🔄 Обновить</button>
+        <div class="filter-actions">
+          <button id="rgBtnReload" class="btn btn-primary">Обновить</button>
           <button id="rgBtnReset" class="btn btn-ghost">Сброс</button>
         </div>
       </div>
@@ -908,7 +938,7 @@
       </div>
       <div>
         <button class="link-mini" id="rgBtnToggleMarksCols">Столбцы меток</button> ·
-        <button class="link-mini" id="rgBtnToggleDocTypes">Развернуть/свернуть типы док.</button> ·
+        <button class="link-mini" id="rgBtnToggleDocTypes">Развернуть документы</button> ·
         <button class="link-mini" id="rgBtnExpandGroups">Развернуть группы</button> ·
         <button class="link-mini" id="rgBtnCollapseGroups">Свернуть до групп</button>
       </div>
@@ -937,7 +967,7 @@
   <!-- Аккордеон с детальными логами работы и ошибок -->
   <details id="logAccordion" class="log-accordion">
     <summary>
-      <span>🐞 Журнал работы и ошибок (<span id="logCount">0</span>)</span>
+      <span>Журнал работы и ошибок (<span id="logCount">0</span>)</span>
       <div class="log-controls">
         <button id="btnCopyLogs" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">Скопировать логи</button>
         <button id="btnClearLogs" class="btn btn-ghost" style="padding:3px 8px; font-size:11px;">Очистить</button>
@@ -982,7 +1012,7 @@
 
       <div class="chart-header">
         <span id="actChartTitle">График активности по 15-минутным интервалам (кликните на столбик для фильтрации списка)</span>
-        <button id="btnClearSlotFilter" class="link-mini" style="display:none; font-weight:700; color:var(--o3-red);">✕ Сбросить фильтр интервала</button>
+        <button id="btnClearSlotFilter" class="link-mini" style="display:none; font-weight:700; color:var(--o3-blue);">✕ Сбросить фильтр интервала</button>
       </div>
       <div class="chart-scroll">
         <div id="actChartBars" class="chart-bars"></div>

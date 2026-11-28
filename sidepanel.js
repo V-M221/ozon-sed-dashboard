@@ -18,7 +18,14 @@ let rawHoldDocs = [];
 let rawClosedInternalRequestDocs = [];
 let rawInternalRequestsInWork = [];
 let rawInternalRequestsOnHold = [];
-let isInternalRequestsLoading = false;
+let closedRequestsLoading = false;
+const executorQueues = { requestId: null, fetchedAt: null };
+
+function showQueueStatus(message = '') {
+  const time = executorQueues.fetchedAt ? formatDateTimeWithSecRu(executorQueues.fetchedAt) : '';
+  document.getElementById('exQueueStatus').textContent = [time, message].filter(Boolean).join(' · ') || '—';
+}
+
 let operatorStatusRequestSequence = 0;
 const activeOperatorStatusRequestIds = { executors: null, registrars: null };
 let filteredDeadlineDocs = [];
@@ -745,7 +752,13 @@ async function ensureConnectionAndSend(tabId, messagePayload) {
   return chrome.tabs.sendMessage(tabId, messagePayload);
 }
 
-async function fetchWidgetData(mode) {
+function finishQueueError(error) {
+  executorQueues.requestId = null;
+  showQueueStatus('не удалось обновить');
+  addLog('warn', 'Не удалось обновить текущие очереди: ' + error);
+}
+
+async function fetchWidgetData(mode, refreshQueues = true) {
   const st = STATE[mode];
   const p = st.prefix;
   const dateYMD = document.getElementById(`${p}Date`).value;
@@ -754,11 +767,19 @@ async function fetchWidgetData(mode) {
   const requestId = crypto.randomUUID();
   st.requestId = requestId;
   st.loading = true;
+  const includeQueues = mode === 'executors' && refreshQueues;
   if (mode === 'executors') {
-    isInternalRequestsLoading = true;
+    closedRequestsLoading = true;
     rawClosedInternalRequestDocs = [];
-    rawInternalRequestsInWork = [];
-    rawInternalRequestsOnHold = [];
+    st.docs = [];
+    st.fetchedAt = null;
+    st.lastExportRows = [];
+    document.getElementById('exBtnCsv').disabled = true;
+    document.getElementById('internalRequestWarning').hidden = true;
+    if (includeQueues) {
+      executorQueues.requestId = requestId;
+      showQueueStatus('обновляются…');
+    }
   }
 
   document.getElementById(`${p}SysDate`).innerText = formatYMDToRu(dateYMD);
@@ -769,10 +790,12 @@ async function fetchWidgetData(mode) {
 
   const tab = await findSedTab();
   if (!tab) {
+    if (requestId === executorQueues.requestId) finishQueueError('Нет связи с СЭД');
     if (requestId !== st.requestId) return;
     st.loading = false;
-    if (mode === 'executors') isInternalRequestsLoading = false;
+    if (mode === 'executors') closedRequestsLoading = false;
     showSkeleton(p, false);
+    if (mode === 'executors') renderWidgetTable(mode);
     const msg = 'Не найдена открытая вкладка https://crm.bank.ozon.ru/! Откройте СЭД в браузере и нажмите «Обновить».';
     setProgress(p, true, msg);
     addLog('error', msg);
@@ -783,13 +806,15 @@ async function fetchWidgetData(mode) {
     await ensureConnectionAndSend(tab.id, {
       target: 'INJECTOR',
       type: 'FETCH_DATE',
-      payload: { dateYMD, mode, requestId }
+      payload: { dateYMD, mode, requestId, includeQueues }
     });
   } catch (e) {
+    if (requestId === executorQueues.requestId) finishQueueError(e.message);
     if (requestId !== st.requestId) return;
     st.loading = false;
-    if (mode === 'executors') isInternalRequestsLoading = false;
+    if (mode === 'executors') closedRequestsLoading = false;
     showSkeleton(p, false);
+    if (mode === 'executors') renderWidgetTable(mode);
     setProgress(p, true, 'Ошибка связи со вкладкой СЭД: ' + e.message);
     addLog('error', 'Ошибка при отправке команды FETCH_DATE', e.stack || e.message);
   }
@@ -1684,25 +1709,28 @@ chrome.runtime.onMessage.addListener((msg) => {
     return;
   }
   if (msg.type === 'EXECUTOR_WORKLOAD_RESULT' && msg.payload) {
-    if (msg.payload.requestId !== STATE.executors.requestId) return;
+    if (msg.payload.requestId !== executorQueues.requestId) return;
     if (msg.payload.error) {
-      setProgress('ex', true, 'Не удалось загрузить документы в работе и на удержании: ' + msg.payload.error);
-      return;
+      finishQueueError(msg.payload.error);
+    } else {
+      rawAssignedDocs = msg.payload.assignedDocs;
+      rawHoldDocs = msg.payload.onHoldDocs;
+      rawInternalRequestsInWork = msg.payload.internalRequestsInWork;
+      rawInternalRequestsOnHold = msg.payload.internalRequestsOnHold;
+      executorQueues.fetchedAt = msg.payload.fetchedAtIso;
+      executorQueues.requestId = null;
+      showQueueStatus();
     }
-    rawAssignedDocs = msg.payload.assignedDocs || [];
-    rawHoldDocs = msg.payload.onHoldDocs || [];
     populateDropdowns('executors');
     populateDeadlineFilterOptions();
     renderWidgetTable('executors');
     requestOperatorStatuses('executors');
     return;
   }
-  if (msg.type === 'INTERNAL_REQUESTS_RESULT' && msg.payload) {
+  if (msg.type === 'CLOSED_INTERNAL_REQUESTS_RESULT' && msg.payload) {
     if (msg.payload.requestId !== STATE.executors.requestId) return;
-    isInternalRequestsLoading = false;
+    closedRequestsLoading = false;
     rawClosedInternalRequestDocs = msg.payload.closedInternalRequests || [];
-    rawInternalRequestsInWork = msg.payload.internalRequestsInWork || [];
-    rawInternalRequestsOnHold = msg.payload.internalRequestsOnHold || [];
     document.getElementById('internalRequestWarning').hidden = !msg.payload.error;
     if (msg.payload.error) addLog('warn', `Не удалось загрузить внутренние запросы: ${msg.payload.error}`);
     populateDropdowns('executors');
@@ -1793,9 +1821,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     const mode = (msg.payload && msg.payload.mode) || 'executors';
     if (msg.payload.requestId !== STATE[mode].requestId) return;
     STATE[mode].loading = false;
-    if (mode === 'executors') isInternalRequestsLoading = false;
+    if (mode === 'executors') closedRequestsLoading = false;
     const p = STATE[mode].prefix;
     showSkeleton(p, false);
+    if (mode === 'executors') renderWidgetTable(mode);
     const errText = msg.payload.message || String(msg.payload);
     setProgress(p, true, errText);
     addLog('error', `Ошибка выполнения [${mode}]: ${errText}`);
@@ -1853,13 +1882,11 @@ function makePairedMetricValue(docsArr, title, sub, kind, shortLabel, tooltipLab
   return `<button type="button" class="cell-btn paired-metric ${kind}" data-drill="${key}" ${tooltipLabel ? `data-assigned-tip="${key}"` : ''}>${cnt} ${shortLabel}</button>`;
 }
 
-function makePairedStatusCell(documentItems, requestItems, loadingRequests, title, sub, statusLabel) {
-  const requestValue = loadingRequests
-    ? '<span class="paired-metric metric-request loading"><span class="sk-inline"></span> зап.</span>'
-    : makePairedMetricValue(requestItems, title, `${sub} · внутренние запросы`, 'metric-request', 'зап.', `Внутренние запросы ${statusLabel}`);
+function makePairedStatusCell(documentItems, requestItems, title, sub, statusLabel) {
+  if (!executorQueues.fetchedAt) return '<td class="cell-zero" title="Данные очередей ещё не загружены">—</td>';
   return `<td class="paired-count-cell"><div class="paired-count-values">
     ${makePairedMetricValue(documentItems, title, `${sub} · документы`, 'metric-document', 'док.', `Документы ${statusLabel}`)}
-    ${requestValue}
+    ${makePairedMetricValue(requestItems, title, `${sub} · внутренние запросы`, 'metric-request', 'зап.', `Внутренние запросы ${statusLabel}`)}
   </div></td>`;
 }
 
@@ -1887,6 +1914,16 @@ function renderWidgetTable(mode) {
   const p = st.prefix;
   const isExec = (mode === 'executors');
 
+  if (isExec && !st.fetchedAt && (st.loading || st.requestId || st.hasLoadedOnce)) {
+    if (!st.loading) {
+      document.querySelector('#exTable tbody').innerHTML = '';
+      document.querySelector('#exTable thead').innerHTML = '';
+      for (const id of ['exAsOfTime', 'exSysTotal', 'exSysGroups', 'exSysUsers', 'exSysMarksCount']) {
+        document.getElementById(id).textContent = '—';
+      }
+    }
+    return;
+  }
   if (isExec) {
     renderDeadlinePanel();
     assignedTooltipStore.clear();
@@ -2056,7 +2093,7 @@ function renderWidgetTable(mode) {
       Группа / ${st.roleTitle} (${dateRu})
       <div class="col-resizer" title="Потяните влево/вправо для изменения ширины первого столбца"></div>
     </th>
-    ${isExec ? `<th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом В работе на текущий момент">В работе<br><small>на сейчас · док. / зап.</small></th><th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом На удержании на текущий момент">На удержании<br><small>на сейчас · док. / зап.</small></th>` : ''}
+    ${isExec ? `<th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом В работе на момент загрузки очередей">В работе<br><small>очереди · док. / зап.</small></th><th class="assigned-col" ${headerRowSpan} title="Документы и внутренние запросы со статусом На удержании на момент загрузки очередей">На удержании<br><small>очереди · док. / зап.</small></th>` : ''}
     ${isExec ? `<th class="closed-pair-col" ${headerRowSpan} title="Закрытые документы и внутренние запросы за ${dateRu}">Закрыто<br><small>за ${dateRu} · док. / зап.</small></th>` : ''}
     <th ${headerRowSpan} data-toggle-breakdown title="Показать или скрыть детализацию общего количества документов за ${dateRu}">
       Всего документов<br><small>за ${dateRu} · ${st.isTotalsBreakdownExpanded ? '▾ детализация' : '▸ детализация'}</small>
@@ -2097,11 +2134,13 @@ function renderWidgetTable(mode) {
     const isDocument = unit === 'док.';
     const kind = isDocument ? 'metric-document' : 'metric-request';
     const name = isDocument ? 'Документы' : 'Запросы';
-    return `<td>${makePairedMetricValue(assigned, title, subtitle, kind, unit, name + ' в работе')}</td>
-      <td>${makePairedMetricValue(onHold, title, subtitle, kind, unit, name + ' на удержании')}</td>
+    return `<td>${executorQueues.fetchedAt ? makePairedMetricValue(assigned, title, subtitle, kind, unit, name + ' в работе') : '—'}</td>
+      <td>${executorQueues.fetchedAt ? makePairedMetricValue(onHold, title, subtitle, kind, unit, name + ' на удержании') : '—'}</td>
       <td>${makePairedMetricValue(closed, title, subtitle + ' · закрыто за ' + dateRu, kind, unit)}</td>`;
   }
 
+  const exportTimes = { 'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt) };
+  if (isExec) exportTimes['Очереди_На'] = formatDateTimeWithSecRu(executorQueues.fetchedAt);
   const expRows = [];
   let html = '';
 
@@ -2124,7 +2163,7 @@ function renderWidgetTable(mode) {
       const name = theme || category;
       const label = theme ? `${category} · ${theme}` : category;
       expRows.push({
-        'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu,
+        ...exportTimes, [st.dateColName]: dateRu,
         'Группа': contextLabel, [st.roleTitle]: theme ? '[ТЕМА ЗАПРОСА]' : '[КАТЕГОРИЯ ЗАПРОСА]',
         'Категория_Внутреннего_Запроса': category, 'Тема_Внутреннего_Запроса': theme,
         'В_Работе_ASSIGNED': assigned.length, 'На_Удержании_ON_HOLD': onHold.length,
@@ -2136,7 +2175,7 @@ function renderWidgetTable(mode) {
         <td class="detail-na" colspan="${1 + markColumns}" title="Только для документов">—</td></tr>`;
     }
 
-    const message = isInternalRequestsLoading ? 'Загрузка…' : (categories.size ? '' : 'Нет запросов');
+    const message = closedRequestsLoading ? 'Загрузка…' : (categories.size ? '' : 'Нет запросов');
     const heading = detailHeading('Запросы', CHATZONE_ICON_SVG, message);
     return heading + Array.from(categories).sort((a, b) => b[1].docs.length - a[1].docs.length || a[0].localeCompare(b[0], 'ru')).map(([category, { docs, themes }]) => {
       const categoryRow = renderRequestRow(category, '', docs);
@@ -2170,7 +2209,7 @@ function renderWidgetTable(mode) {
     const groupOnHoldAll = [...g.onHold, ...g.internalRequestsOnHold];
 
     const gExp = {
-      'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+      ...exportTimes, [st.dateColName]: dateRu, 'Группа': g.groupName,
       [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
       ...(isExec ? { 'В_Работе_ASSIGNED': groupAssignedAll.length, 'На_Удержании_ON_HOLD': groupOnHoldAll.length, 'Внутренние_Запросы_Закрыто': g.internalRequests.length } : {}),
       'Всего': g.all.length, 'Без_Метки': g.noMark.length, 'С_Меткой_Всего': g.withMarks.length
@@ -2180,9 +2219,9 @@ function renderWidgetTable(mode) {
 
     html += `<tr class="group-row">
       <td class="sticky-col" data-grp="${escapeHtml(g.groupName)}">${isCol ? '▶' : '▼'} ${g.groupName} <span class="grp-badge">${sortedUsers.length}</span>${detailControls('data-grp-types', g.groupName, !isCol && isGroupTypesExpanded, groupRequestKey, !isCol && isGroupRequestsExpanded)}</td>
-      ${isExec ? makePairedStatusCell(g.assigned, g.internalRequestsInWork, isInternalRequestsLoading, `Группа: ${g.groupName}`, 'Документы и внутренние запросы', 'в работе (на сейчас)') : ''}
-      ${isExec ? makePairedStatusCell(g.onHold, g.internalRequestsOnHold, isInternalRequestsLoading, `Группа: ${g.groupName}`, 'Документы и внутренние запросы', 'на удержании (на сейчас)') : ''}
-      ${isExec ? makePairedClosedCell(g.all, g.internalRequests, isInternalRequestsLoading, `Группа: ${g.groupName}`, 'Итого', dateRu) : ''}
+      ${isExec ? makePairedStatusCell(g.assigned, g.internalRequestsInWork, `Группа: ${g.groupName}`, 'Документы и внутренние запросы', 'в работе (снимок очередей)') : ''}
+      ${isExec ? makePairedStatusCell(g.onHold, g.internalRequestsOnHold, `Группа: ${g.groupName}`, 'Документы и внутренние запросы', 'на удержании (снимок очередей)') : ''}
+      ${isExec ? makePairedClosedCell(g.all, g.internalRequests, closedRequestsLoading, `Группа: ${g.groupName}`, 'Итого', dateRu) : ''}
       ${makeDrillCell(g.all, `Группа: ${g.groupName}`, `Все документы подразделения за ${dateRu}`, mode)}
       ${renderBreakdownCells(g.noMark, g.withMarks, g.byMark, `Группа: ${g.groupName}`, '')}
     </tr>`;
@@ -2191,7 +2230,7 @@ function renderWidgetTable(mode) {
       html += detailHeading('Документы', DOC_ICON_SVG, groupDocTypes.length ? '' : 'Нет документов');
       groupDocTypes.forEach(dt => {
         const row = {
-          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+          ...exportTimes, [st.dateColName]: dateRu, 'Группа': g.groupName,
           [st.roleTitle]: '[ИТОГО ПО ГРУППЕ]', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': dt.docType,
           ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'На_Удержании_ON_HOLD': dt.onHold.length, 'Внутренние_Запросы_Закрыто': 0 } : {}),
           'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
@@ -2218,7 +2257,7 @@ function renderWidgetTable(mode) {
         const assignedDetailsStr = isExec ? u.assigned.map(ad => `${getDocType(ad)} (${formatStatusDuration(ad.updatedAt || ad.createdAt, st.fetchedAt)})`).join(', ') : '';
 
         const uExp = {
-          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+          ...exportTimes, [st.dateColName]: dateRu, 'Группа': g.groupName,
           [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': '[ВСЕ ТИПЫ СОТРУДНИКА]',
           ...(isExec ? { 'В_Работе_ASSIGNED': userAssignedAll.length, 'На_Удержании_ON_HOLD': userOnHoldAll.length, 'Внутренние_Запросы_Закрыто': u.internalRequests.length, 'Детали_В_Работе': assignedDetailsStr } : {}),
           'Всего': u.all.length, 'Без_Метки': u.noMark.length, 'С_Меткой_Всего': u.withMarks.length
@@ -2234,9 +2273,9 @@ function renderWidgetTable(mode) {
           <td class="sticky-col" data-usr="${escapeHtml(userKey)}" title="Развернуть детализацию сотрудника">
             <span class="operator-line"><span class="operator-arrow" aria-hidden="true">${isUserExp || isUserRequestsExpanded ? '▼' : '▶'}</span><span class="operator-name" title="${escapeHtml(u.person)}">${personDisplayHtml}</span>${statusRender.html}${actionsHtml}${detailControls('data-usr-types', userKey, isUserExp, userRequestKey, isUserRequestsExpanded)}</span>
           </td>
-      ${isExec ? makePairedStatusCell(u.assigned, u.internalRequestsInWork, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, 'в работе (на сейчас)') : ''}
-      ${isExec ? makePairedStatusCell(u.onHold, u.internalRequestsOnHold, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, 'на удержании (на сейчас)') : ''}
-      ${isExec ? makePairedClosedCell(u.all, u.internalRequests, isInternalRequestsLoading, u.person, `Группа: ${g.groupName}`, dateRu) : ''}
+      ${isExec ? makePairedStatusCell(u.assigned, u.internalRequestsInWork, u.person, `Группа: ${g.groupName}`, 'в работе (снимок очередей)') : ''}
+      ${isExec ? makePairedStatusCell(u.onHold, u.internalRequestsOnHold, u.person, `Группа: ${g.groupName}`, 'на удержании (снимок очередей)') : ''}
+      ${isExec ? makePairedClosedCell(u.all, u.internalRequests, closedRequestsLoading, u.person, `Группа: ${g.groupName}`, dateRu) : ''}
           ${makeDrillCell(u.all, u.person, `Группа: ${g.groupName} · Статус: ${statusRender.text || '—'} · Все документы за ${dateRu}`, mode)}
           ${renderBreakdownCells(u.noMark, u.withMarks, u.byMark, u.person, `Группа: ${g.groupName} · `)}
         </tr>`;
@@ -2245,7 +2284,7 @@ function renderWidgetTable(mode) {
           html += detailHeading('Документы', DOC_ICON_SVG, sortedDocTypes.length ? '' : 'Нет документов');
           sortedDocTypes.forEach(dt => {
             const dtExp = {
-              'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': g.groupName,
+              ...exportTimes, [st.dateColName]: dateRu, 'Группа': g.groupName,
               [st.roleTitle]: u.person, 'Логин_UPN': u.upn || '', 'Текущий_Статус': statusRender.text, 'Тип_Документа': dt.docType,
               ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'На_Удержании_ON_HOLD': dt.onHold.length, 'Внутренние_Запросы_Закрыто': 0, 'Детали_В_Работе': '' } : {}),
               'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
@@ -2270,7 +2309,7 @@ function renderWidgetTable(mode) {
     const totalAssignedAll = [...grandAssigned, ...filteredInternalRequestsInWork];
     const totalOnHoldAll = [...filteredOnHold, ...filteredInternalRequestsOnHold];
     const totExp = {
-      'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
+      ...exportTimes, [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
       [st.roleTitle]: 'ОБЩИЙ ИТОГ', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': 'ВСЕ ТИПЫ',
       ...(isExec ? { 'В_Работе_ASSIGNED': totalAssignedAll.length, 'На_Удержании_ON_HOLD': totalOnHoldAll.length, 'Внутренние_Запросы_Закрыто': filteredInternalRequests.length, 'Детали_В_Работе': '' } : {}),
       'Всего': filtered.length, 'Без_Метки': grandNoMark.length, 'С_Меткой_Всего': grandWithMarks.length
@@ -2280,9 +2319,9 @@ function renderWidgetTable(mode) {
 
     html += `<tr class="total-row">
       <td class="sticky-col">ИТОГО ЗА ${dateRu}${detailControls('data-total-types', '', st.totalDocTypesExpanded, 'total', st.totalRequestThemesExpanded)}</td>
-      ${isExec ? makePairedStatusCell(grandAssigned, filteredInternalRequestsInWork, isInternalRequestsLoading, 'Все подразделения', 'Общий итог', 'в работе (на сейчас)') : ''}
-      ${isExec ? makePairedStatusCell(filteredOnHold, filteredInternalRequestsOnHold, isInternalRequestsLoading, 'Все подразделения', 'Общий итог', 'на удержании (на сейчас)') : ''}
-      ${isExec ? makePairedClosedCell(filtered, filteredInternalRequests, isInternalRequestsLoading, 'Все подразделения', 'Общий итог', dateRu) : ''}
+      ${isExec ? makePairedStatusCell(grandAssigned, filteredInternalRequestsInWork, 'Все подразделения', 'Общий итог', 'в работе (снимок очередей)') : ''}
+      ${isExec ? makePairedStatusCell(filteredOnHold, filteredInternalRequestsOnHold, 'Все подразделения', 'Общий итог', 'на удержании (снимок очередей)') : ''}
+      ${isExec ? makePairedClosedCell(filtered, filteredInternalRequests, closedRequestsLoading, 'Все подразделения', 'Общий итог', dateRu) : ''}
       ${makeDrillCell(filtered, `Все подразделения за ${dateRu}`, 'Общий итог за день', mode)}
       ${renderBreakdownCells(grandNoMark, grandWithMarks, grandByMark, `Общий итог за ${dateRu}`, '')}
     </tr>`;
@@ -2291,7 +2330,7 @@ function renderWidgetTable(mode) {
       html += detailHeading('Документы', DOC_ICON_SVG, grandDocTypes.length ? '' : 'Нет документов');
       grandDocTypes.forEach(dt => {
         const row = {
-          'Актуально_На': formatDateTimeWithSecRu(st.fetchedAt), [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
+          ...exportTimes, [st.dateColName]: dateRu, 'Группа': 'ВСЕ ГРУППЫ',
           [st.roleTitle]: 'ОБЩИЙ ИТОГ', 'Логин_UPN': '', 'Текущий_Статус': '', 'Тип_Документа': dt.docType,
           ...(isExec ? { 'В_Работе_ASSIGNED': dt.assigned.length, 'На_Удержании_ON_HOLD': dt.onHold.length, 'Внутренние_Запросы_Закрыто': 0 } : {}),
           'Всего': dt.all.length, 'Без_Метки': dt.noMark.length, 'С_Меткой_Всего': dt.withMarks.length
@@ -2308,6 +2347,7 @@ function renderWidgetTable(mode) {
 
   tbody.innerHTML = html;
   st.lastExportRows = expRows;
+  if (isExec) document.getElementById('exBtnCsv').disabled = !executorQueues.fetchedAt || closedRequestsLoading;
   showSkeleton(p, false);
 }
 
@@ -2583,17 +2623,28 @@ function bindWidgetEvents(mode) {
     renderWidgetTable(mode);
   };
 
-  document.getElementById(`${p}Date`).addEventListener('change', () => fetchWidgetData(mode));
+  document.getElementById(`${p}Date`).addEventListener('change', () => fetchWidgetData(mode, false));
   document.getElementById(`${p}BtnReload`).onclick = () => fetchWidgetData(mode);
 
   document.getElementById(`${p}BtnStop`).onclick = async () => {
-    const tab = await findSedTab();
-    if (tab) chrome.tabs.sendMessage(tab.id, { target: 'INJECTOR', type: 'STOP_FETCH', payload: { requestId: st.requestId } }).catch(() => {});
+    const requests = new Set([st.requestId]);
+    if (mode === 'executors' && executorQueues.requestId) {
+      requests.add(executorQueues.requestId);
+      executorQueues.requestId = null;
+      showQueueStatus('обновление остановлено');
+    }
     st.requestId = null;
     st.loading = false;
-    if (mode === 'executors') isInternalRequestsLoading = false;
+    if (mode === 'executors') closedRequestsLoading = false;
     setProgress(p, false);
     showSkeleton(p, false);
+    if (mode === 'executors') renderWidgetTable(mode);
+    const tab = await findSedTab();
+    if (tab) {
+      for (const requestId of requests) {
+        if (requestId) chrome.tabs.sendMessage(tab.id, { target: 'INJECTOR', type: 'STOP_FETCH', payload: { requestId } }).catch(() => {});
+      }
+    }
   };
 
   document.getElementById(`${p}BtnReset`).onclick = () => {

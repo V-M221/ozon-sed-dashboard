@@ -132,7 +132,6 @@
     if (type === 'FETCH_DATE') {
       const mode = payload.mode || 'executors';
       const dateYMD = payload.dateYMD || new Date().toISOString().slice(0, 10);
-      const dueDateYMD = payload.dueDateYMD || dateYMD;
 
       emitRuntimeMessage({
         type: 'LIVE_LOG',
@@ -162,20 +161,23 @@
       });
 
       if (mode === 'executors') {
-        cachedAssigned = cachedAssigned || buildSampleDocs(dateYMD, 9, 'ASSIGNED', dueDateYMD);
         emitRuntimeMessage({
-          type: 'EXECUTOR_WORKLOAD_RESULT',
-          payload: { requestId: payload.requestId, assignedDocs: cachedAssigned, onHoldDocs: [] }
+          type: 'CLOSED_INTERNAL_REQUESTS_RESULT',
+          payload: { requestId: payload.requestId, closedInternalRequests: buildInternalRequests(dateYMD, 4, 'CLOSED', 95000), error: '' }
         });
-        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
-        emitRuntimeMessage({
-          type: 'INTERNAL_REQUESTS_RESULT',
-          payload: {
-            requestId: payload.requestId, closedInternalRequests: buildInternalRequests(dateYMD, 4, 'CLOSED', 95000),
-            internalRequestsInWork: buildInternalRequests(today, 3, 'ASSIGNED', 95100),
-            internalRequestsOnHold: buildInternalRequests(today, 2, 'ON_HOLD', 95200)
-          }
-        });
+        if (payload.includeQueues !== false) {
+          const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' });
+          cachedAssigned = cachedAssigned || buildSampleDocs(today, 9, 'ASSIGNED', today);
+          emitRuntimeMessage({
+            type: 'EXECUTOR_WORKLOAD_RESULT',
+            payload: {
+              requestId: payload.requestId, assignedDocs: cachedAssigned, onHoldDocs: [],
+              internalRequestsInWork: buildInternalRequests(today, 3, 'ASSIGNED', 95100),
+              internalRequestsOnHold: buildInternalRequests(today, 2, 'ON_HOLD', 95200),
+              fetchedAtIso: new Date().toISOString(), error: ''
+            }
+          });
+        }
       }
       return;
     }
@@ -251,7 +253,7 @@
 
   window.chrome = {
     runtime: {
-      getManifest: () => ({ version: '3.1.16', name: 'Ozon Банк · СЭД Онлайн-Дашборд' }),
+      getManifest: () => ({ version: '3.1.17', name: 'Ozon Банк · СЭД Онлайн-Дашборд' }),
       getURL: (path) => path,
       reload: () => window.location.reload(),
       onMessage: {

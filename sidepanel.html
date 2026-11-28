@@ -777,7 +777,7 @@
       <button id="tabDeadlines" class="w-tab" aria-controls="widgetDeadlines">Сроки</button>
     </div>
     <div class="top-actions" id="exHeaderActions">
-      <div class="as-of-badge">Актуально на: <strong id="exAsOfTime">—</strong></div>
+      <div class="as-of-badge">Отчёт на: <strong id="exAsOfTime">—</strong></div>
       <button id="exBtnCsv" class="btn btn-light">CSV</button>
       <button id="exBtnExpandTab" class="btn btn-ghost">На весь экран ↗</button>
     </div>
@@ -853,7 +853,7 @@
         <div id="exWrapMark" class="o3-field" data-label="Метка тикета"></div>
 
         <div class="filter-actions">
-          <button id="exBtnReload" class="btn btn-primary">Обновить</button>
+          <button id="exBtnReload" class="btn btn-primary" title="Обновить отчёт за день и текущие очереди">Обновить</button>
           <button id="exBtnReset" class="btn btn-ghost">Сброс</button>
         </div>
       </div>
@@ -868,6 +868,7 @@
     <div class="sys-bar">
       <div>
         Дата закрытия: <strong id="exSysDate">—</strong> ·
+        <span role="status">Очереди: <strong id="exQueueStatus">—</strong></span> ·
         Документов: <strong id="exSysTotal">0</strong> ·
         Групп: <strong id="exSysGroups">0</strong> ·
         Исполнителей: <strong id="exSysUsers">0</strong> ·
